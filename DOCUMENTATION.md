@@ -7,7 +7,8 @@ bytes. **CTOS** = client → server, **STOC** = server → client.
 Typical use: a real-time game or chat backend made of services in several languages.
 
 **Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
-with code generation exists too. Sockets, bindings and callbacks are planned (bottom of this page).
+with code generation, TCP client/server runtime (batched, no allocation after start), handlers,
+hooks and tunnels exist too. Bindings for other languages are planned (bottom of this page).
 
 ## Quick start
 
@@ -110,6 +111,67 @@ Rules, enforced by the generator: ids are unique; bit 15 = 1 means server → cl
 `deprecated = true` instead). In C, `DX_PKT_CHAT_MESSAGE` is the id and
 `dx_payload_validate(id, bytes, len)` checks a payload against its layout.
 
+## Running a server and a client
+
+A **context** (`dx_ctx`) is one network engine. It reserves all its memory when created, then runs
+without allocating. Use one context from one thread; several contexts can run in parallel threads.
+
+```c
+dx_ctx* ctx = dx_create(NULL);                      /* NULL = default settings */
+dx_listen(ctx, "127.0.0.1", 0);                     /* server: port 0 = any, read it back: */
+int port = dx_listen_port(ctx);
+uint32_t conn; dx_connect(ctx, "127.0.0.1", port, &conn);   /* client (does not block) */
+
+dx_packet pk[64];
+for (;;) {
+    int n = dx_poll(ctx, pk, 64, 100);              /* wait up to 100 ms, get up to 64 at once */
+    for (int i = 0; i < n; i++) {
+        /* pk[i].packet_id: a registry id, or DX_SYS_CONNECTED / DX_SYS_DISCONNECTED */
+        /* pk[i].data, pk[i].length: the payload, zero-copy, inside a library-owned ring */
+    }
+    dx_release(ctx, n);                             /* give the memory back (in order) */
+}
+```
+
+- **Zero-copy:** `data` points into the library's ring buffer and stays valid until `dx_release`.
+  If you never release, the ring fills and reading pauses (back-pressure, nothing is lost).
+- **Roles:** the side that called `dx_listen` is the server (sends ids with bit 15 set, receives
+  ids without it); the side that called `dx_connect` is the client. `dx_send` enforces it.
+- **Sending:** `dx_send` / `dx_send_batch` copy into a per-connection buffer and write what the
+  socket accepts; `DX_ERR_WOULD_BLOCK` means the buffer is full: poll, then retry. Sequence
+  numbers are added by the library.
+- **Bad traffic:** invalid headers, payloads, wrong direction or sequence, oversized lengths, or a
+  peer silent for `idle_timeout_ms` close that connection only; `DX_SYS_DISCONNECTED` carries the
+  reason (`DX_ERR_*`, 0 for a normal close). Unknown/mid-packet hang-ups are reported too.
+- **Settings** (`dx_config`, zero = default): `max_conns` (256), `max_payload` (64 KiB),
+  `rx_ring_bytes` (4 MiB), `rx_queue`, `tx_bytes`, `idle_timeout_ms` (60 s), `backend`, `flags`,
+  `max_tunnels`, optional allocator. Memory is about `max_conns × (max_payload + tx_bytes)` +
+  `rx_ring_bytes`, reserved once at `dx_create`.
+
+## Handlers, hooks and tunnels
+
+A push-style layer on top of `dx_poll`: call `dx_dispatch(ctx, timeout)` in your loop instead.
+
+| Feature | What it does |
+|---|---|
+| `dx_on_packet(ctx, id, fn, user)` | `fn` runs for each received packet with that id (id 0 = default handler) |
+| `dx_set_hooks(ctx, &hooks)` | `on_connect`, `on_disconnect`, `on_error` observe; `before_send` and `after_recv` can **reject** a packet (non-zero) |
+| `dx_tunnel(ctx, a, b, filter, user)` | relays packets between two connections (a proxy); `filter` can drop some; a peer that cannot keep up is disconnected |
+
+Callbacks run in the owner thread; the packet they get is valid only during the call (copy it to
+keep it). They may call `dx_send`, `dx_close`, `dx_connect`; never `dx_destroy`. A `before_send`
+hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + a hook) and
+`Tests/Integration/test_hooks.c` (hooks, filtering proxy).
+
+## I/O backends
+
+| Backend (`dx_config.backend`) | Where | Notes |
+|---|---|---|
+| `DX_BACKEND_AUTO` (default) | all | epoll on Linux, kqueue on macOS/BSD, poll elsewhere |
+| `DX_BACKEND_POLL` | Unix | portable, scans every socket: fine for hundreds of connections |
+| `DX_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
+| `DX_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
+
 ## API
 
 All functions are pure (no I/O, no allocation), so thread-safe; the caller owns all buffers.
@@ -123,6 +185,11 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `dx_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
 | `dx_payload_validate(id, in, len)` | same, using the registry layout of packet `id`; `DX_ERR_UNKNOWN_ID` if not registered |
 | `dx_packet_name(id)` | registered name (for logs), or NULL |
+| `dx_create` / `dx_destroy` / `dx_config_default` | make and free a context; settings |
+| `dx_listen`, `dx_listen_port`, `dx_connect` | start a server, read its port, start a client |
+| `dx_poll` / `dx_release` | receive a batch of packets (zero-copy) / give their memory back |
+| `dx_send`, `dx_send_batch`, `dx_close` | send (validated, copied), send many, close gracefully |
+| `dx_on_packet`, `dx_set_hooks`, `dx_dispatch`, `dx_tunnel` | handlers, hooks, push-style loop, relays |
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
 
@@ -154,7 +221,13 @@ are short shell scripts.
 | Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
 | Generated | one test per language (`Tests/Generated/<Lang>/`) checks that its generated code lists the same packets, names and layouts as `Generated/registry.txt`; C always runs, C++/Python/Rust/TypeScript run if `c++`, Python 3.11+, `rustc`, `node` (22.6+) are installed |
 | Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
-| Fuzz | libFuzzer feeds random bytes to the decoders under ASan/UBSan |
+| Integration | real server and client over loopback on every backend: handshake, ping/pong, 1 MiB both ways, 10 000 ordered packets, clean close from either side; handlers, hooks and a filtering tunnel |
+| Faults | a raw socket sends hostile traffic: 1 byte at a time, bad magic/version/flags/direction/sequence/id, huge lengths, bad UTF-8, hang-up mid-packet, slowloris, flood with back-pressure |
+| Memory | after warm-up the allocator hook counts **zero** calls during traffic and connection churn, and nothing leaks; `check_source_rules.sh` forbids allocation and printing outside `context.c` |
+| Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
+| Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
+| Examples | the C chat server and client run as separate processes |
+| Fuzz | libFuzzer feeds random bytes to the decoders and to a live connection's framing under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |
 
 Extra runs (macOS needs Homebrew LLVM: `export CC=/opt/homebrew/opt/llvm/bin/clang`):
@@ -165,7 +238,8 @@ cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fu
 ```
 
 Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
-so run `tsan` on Linux (docker or CI). Coverage of `Source/`: 100 % lines, about 98 % branches.
+so run `Tools/Scripts/linux_check.sh` (Docker, Ubuntu) to run debug, asan and tsan on Linux, which
+also exercises the epoll backend. Coverage of `Source/`: 100 % lines, about 98 % branches.
 
 Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
 (payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
@@ -173,10 +247,7 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-Sockets and event loop (epoll, io_uring, kqueue, IOCP) · **handlers and hooks**
-(per-packet callbacks, connect/disconnect/before-send/after-receive/error hooks, a tunnel that
-relays and filters packets between connections; callbacks run on the owner thread and received
-pointers are valid only during the call) · bindings for C++, Python, Rust, Node, WASM ·
-measured optimisations and fuzzing.
+io_uring and IOCP backends · bindings for C++, Python, Rust, Node, WASM · measured
+optimisations and long fuzzing runs.
 
 License: MIT.

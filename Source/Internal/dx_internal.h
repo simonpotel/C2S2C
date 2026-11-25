@@ -45,6 +45,19 @@ typedef struct dx_entry {
     uint8_t inl[4]; /* payload of DX_SYS_DISCONNECTED */
 } dx_entry;
 
+/* One registered handler (see dx_on_packet). */
+typedef struct dx_handler_slot {
+    dx_handler fn;
+    void* user;
+} dx_handler_slot;
+
+/* A relay between two connections (see dx_tunnel). first == 0 means the slot is free. */
+typedef struct dx_tunnel_slot {
+    uint32_t first, second;
+    dx_tunnel_filter filter;
+    void* user;
+} dx_tunnel_slot;
+
 struct dx_ctx {
     dx_config cfg;
     const dx_io_ops* ops;
@@ -62,6 +75,11 @@ struct dx_ctx {
     uint8_t* ring_mem;
     dx_entry* q; /* queue of entries; head <= handed <= tail (free-running counters) */
     uint32_t q_cap, q_head, q_handed, q_tail;
+
+    dx_hooks hooks;
+    int in_before_send;        /* guards against a before_send hook calling dx_send */
+    dx_handler_slot* handlers; /* one per registry packet, plus the default at the end */
+    dx_tunnel_slot* tunnels;
 
     uint32_t stalled_count;
     uint64_t now_ms;
@@ -95,6 +113,13 @@ int dx_ctx_has_room(const dx_ctx* ctx);
 int dx_ctx_deliver(dx_ctx* ctx, uint32_t conn, uint16_t id, uint8_t flags, uint32_t seq,
                    const uint8_t* payload, uint32_t len);
 void dx_ctx_event(dx_ctx* ctx, uint32_t conn, uint16_t sys_id, int32_t reason);
+
+/* Core/registry.c: position of a packet in dx_registry, or -1 */
+int dx_registry_index(uint16_t packet_id);
+
+/* Core/Hooks/tunnel.c */
+int dx_tunnel_forward(dx_ctx* ctx, const dx_packet* p);
+void dx_tunnel_on_disconnect(dx_ctx* ctx, uint32_t conn);
 
 /* Core/Ctx/listener.c */
 void dx_ctx_accept_all(dx_ctx* ctx);

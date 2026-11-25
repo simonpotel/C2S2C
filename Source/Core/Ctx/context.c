@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "dx_internal.h"
+#include "dx_packets.h"
 
 /*
  * In plain words: a context is one self-contained network engine. It reserves every byte of
@@ -16,6 +17,7 @@
 #define DEFAULT_RING_BYTES (4u * 1024u * 1024u)
 #define DEFAULT_QUEUE 4096u
 #define DEFAULT_IDLE_MS 60000u
+#define DEFAULT_TUNNELS 16u
 
 static void* default_alloc(size_t size, void* user)
 {
@@ -39,6 +41,7 @@ void dx_config_default(dx_config* cfg)
     cfg->rx_queue = DEFAULT_QUEUE;
     cfg->tx_bytes = 4u * (DEFAULT_MAX_PAYLOAD + DX_HEADER_SIZE);
     cfg->idle_timeout_ms = DEFAULT_IDLE_MS;
+    cfg->max_tunnels = DEFAULT_TUNNELS;
     cfg->backend = DX_BACKEND_AUTO;
     cfg->alloc.alloc = default_alloc;
     cfg->alloc.release = default_release;
@@ -56,6 +59,9 @@ static int resolve_config(const dx_config* in, dx_config* out)
     if (in->rx_queue) out->rx_queue = in->rx_queue;
     if (in->idle_timeout_ms) out->idle_timeout_ms = in->idle_timeout_ms;
     if (in->backend) out->backend = in->backend;
+    /* Fields added after the first release exist only if the caller's struct is big enough. */
+    if (in->size >= offsetof(dx_config, reserved) && in->max_tunnels)
+        out->max_tunnels = in->max_tunnels;
     out->flags = in->flags;
     if (in->alloc.alloc && in->alloc.release) out->alloc = in->alloc;
     /* tx_bytes defaults from the resolved max_payload, not from the default one. */
@@ -78,6 +84,8 @@ static void release_all(dx_ctx* ctx)
     a->release(ctx->tx_mem, a->user);
     a->release(ctx->ring_mem, a->user);
     a->release(ctx->q, a->user);
+    a->release(ctx->handlers, a->user);
+    a->release(ctx->tunnels, a->user);
     a->release(ctx, a->user);
 }
 
@@ -109,7 +117,10 @@ dx_ctx* dx_create(const dx_config* user_cfg)
     ctx->tx_mem = a->alloc((size_t)tx_total, a->user);
     ctx->ring_mem = a->alloc(cfg.rx_ring_bytes, a->user);
     ctx->q = a->alloc(sizeof(dx_entry) * q_cap, a->user);
-    ctx->io = ctx->conn_arr && ctx->rx_mem && ctx->tx_mem && ctx->ring_mem && ctx->q
+    ctx->handlers = a->alloc(sizeof(dx_handler_slot) * (dx_registry_count + 1u), a->user);
+    ctx->tunnels = a->alloc(sizeof(dx_tunnel_slot) * cfg.max_tunnels, a->user);
+    ctx->io = ctx->conn_arr && ctx->rx_mem && ctx->tx_mem && ctx->ring_mem && ctx->q &&
+                      ctx->handlers && ctx->tunnels
                   ? ops->open(a, cfg.max_conns + 1u)
                   : NULL;
     if (!ctx->io) {
@@ -119,6 +130,8 @@ dx_ctx* dx_create(const dx_config* user_cfg)
 
     memset(ctx->conn_arr, 0, sizeof(dx_conn) * cfg.max_conns);
     memset(ctx->q, 0, sizeof(dx_entry) * q_cap);
+    memset(ctx->handlers, 0, sizeof(dx_handler_slot) * (dx_registry_count + 1u));
+    memset(ctx->tunnels, 0, sizeof(dx_tunnel_slot) * cfg.max_tunnels);
     dx_pool_init(&ctx->conns, (uint8_t*)ctx->conn_arr, sizeof(dx_conn), cfg.max_conns);
     for (uint32_t i = 0; i < cfg.max_conns; i++)
         ctx->conn_arr[i].gen = 1;

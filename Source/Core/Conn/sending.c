@@ -58,6 +58,13 @@ int dx_send(dx_ctx* ctx, uint32_t conn, uint16_t packet_id, const uint8_t* data,
         int rc = dx_payload_validate(packet_id, data, len);
         if (rc != DX_OK) return rc; /* refuse to send what the receiver would reject */
     }
+    if (ctx->hooks.before_send) {
+        if (ctx->in_before_send) return DX_ERR_INVALID_ARG; /* the hook called dx_send */
+        ctx->in_before_send = 1;
+        int veto = ctx->hooks.before_send(ctx, conn, packet_id, data, len, ctx->hooks.user);
+        ctx->in_before_send = 0;
+        if (veto) return DX_ERR_REJECTED;
+    }
     uint32_t frame = DX_HEADER_SIZE + len;
     if (ctx->cfg.tx_bytes - c->tx_len < frame) return DX_ERR_WOULD_BLOCK;
 

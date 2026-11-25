@@ -27,5 +27,6 @@
 #define DX_ERR_LIMIT (-19)         /* a configured limit is reached (connections, listener) */
 #define DX_ERR_BAD_CONN (-20)      /* unknown, closed or stale connection handle */
 #define DX_ERR_TIMEOUT (-21)       /* connection idle for too long */
+#define DX_ERR_REJECTED (-22)      /* a hook refused the packet */
 
 #endif

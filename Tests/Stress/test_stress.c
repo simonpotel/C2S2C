@@ -125,10 +125,26 @@ int main(void)
     }
     CHECK(S.connected == conns && C.connected == conns);
 
-    /* Traffic: keep sending pings round-robin until the time is up. */
+    /* Warm-up: one ping on every connection, so each connection's buffers have been touched
+     * (the operating system hands out memory lazily). The memory baseline is taken afterwards. */
     uint8_t b[4] = {1, 2, 3, 4};
-    uint64_t start = test_now_ms(), sent = 0, next = 0;
-    long rss_early = 0;
+    uint64_t sent = 0;
+    for (unsigned i = 0; i < conns; i++) {
+        while (dx_send(C.ctx, handle[i], DX_PKT_PING, b, 4) == DX_ERR_WOULD_BLOCK) {
+            pump(&S);
+            pump(&C);
+        }
+        sent++;
+    }
+    uint64_t w1 = test_now_ms();
+    while (C.pongs < sent && test_now_ms() - w1 < 60000) {
+        pump(&S);
+        pump(&C);
+    }
+    long rss_early = rss_kb();
+
+    /* Traffic: keep sending pings round-robin until the time is up. */
+    uint64_t start = test_now_ms(), next = 0;
     while (test_now_ms() - start < seconds * 1000u) {
         for (int k = 0; k < 256; k++) {
             if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;
@@ -136,7 +152,6 @@ int main(void)
         }
         pump(&S);
         pump(&C);
-        if (!rss_early && test_now_ms() - start > seconds * 250u) rss_early = rss_kb();
     }
     uint64_t t1 = test_now_ms();
     while (C.pongs < sent && test_now_ms() - t1 < 30000) {
@@ -149,9 +164,9 @@ int main(void)
     CHECK(C.pongs == sent && S.pings == sent);
     CHECK(S.bad == 0 && C.bad == 0 && S.disconnected == 0 && C.disconnected == 0);
 
-    /* Memory must not keep growing once traffic is steady (10 % plus 5 MB of slack). */
+    /* Memory must not keep growing once every connection is warm (10 % plus 5 MB of slack). */
     long rss_end = rss_kb();
-    printf("max RSS: %ld kB after 25%% of the run, %ld kB at the end\n", rss_early, rss_end);
+    printf("max RSS: %ld kB after warm-up, %ld kB at the end\n", rss_early, rss_end);
     CHECK(rss_end <= rss_early + rss_early / 10 + 5120);
 
     /* The side that closes first keeps the sockets in TIME_WAIT for a while. Closing the server

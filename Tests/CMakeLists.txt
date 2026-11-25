@@ -104,7 +104,13 @@ if(DX_RUSTC)
 endif()
 find_program(DX_NODE node)
 if(DX_NODE)
-    add_test(NAME generated_typescript COMMAND ${DX_NODE} ${DX_GEN_TESTS}/TypeScript/test_generated.ts ${DX_GOLDEN})
+    # Node can run .ts files directly when it supports type stripping (22.6+).
+    execute_process(COMMAND ${DX_NODE} --experimental-strip-types -e "" RESULT_VARIABLE DX_NODE_TS
+                    OUTPUT_QUIET ERROR_QUIET)
+    if(DX_NODE_TS EQUAL 0)
+        add_test(NAME generated_typescript COMMAND ${DX_NODE} --experimental-strip-types
+                 ${DX_GEN_TESTS}/TypeScript/test_generated.ts ${DX_GOLDEN})
+    endif()
 endif()
 set_tests_properties(generated_c PROPERTIES LABELS Generated)
 foreach(lang cpp python rust typescript)
@@ -125,6 +131,7 @@ endfunction()
 
 dx_net_test(test_integration Integration Integration)
 dx_net_test(test_faults Faults Faults)
+dx_net_test(test_hooks Integration Integration)
 dx_net_test(test_noalloc Memory Memory)
 dx_net_test(test_threads Concurrency Concurrency)
 dx_net_test(test_stress Stress Stress)
@@ -135,3 +142,8 @@ target_link_libraries(test_threads PRIVATE Threads::Threads)
 # Rules the compiler cannot check: allocation only in context.c, no printing in the library.
 add_test(NAME source_rules COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/check_source_rules.sh)
 set_tests_properties(source_rules PROPERTIES LABELS Memory)
+
+# The C chat example, run end to end (server and clients as separate processes).
+add_test(NAME example_chat_c COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
+         $<TARGET_FILE:chat_server> $<TARGET_FILE:chat_client>)
+set_tests_properties(example_chat_c PROPERTIES LABELS Examples TIMEOUT 60)

@@ -55,6 +55,8 @@ const char* dx_strerror(int err)
         return "invalid connection";
     case DX_ERR_TIMEOUT:
         return "connection timed out";
+    case DX_ERR_REJECTED:
+        return "rejected by a hook";
     default:
         return "unknown error"; /* never NULL, so callers can print it without checking */
     }

@@ -29,7 +29,10 @@ static void test_roundtrip_and_layout(void)
     CHECK(dx_header_encode(&h, b) == DX_OK);
     const uint8_t want[DX_HEADER_SIZE] = {0xDE, 0xC0, 1, 0, 1, 0, 5, 0, 0, 0, 7, 0, 0, 0};
     CHECK(memcmp(b, want, sizeof b) == 0);
-    CHECK(dx_header_decode(b, sizeof b, &o) == DX_OK && memcmp(&o, &h, sizeof h) == 0);
+    CHECK(dx_header_decode(b, sizeof b, &o) == DX_OK);
+    /* Field by field: comparing the raw struct would also compare its padding bytes. */
+    CHECK(o.magic == h.magic && o.version == h.version && o.flags == h.flags &&
+          o.packet_id == h.packet_id && o.length == h.length && o.sequence == h.sequence);
 }
 
 /* Length limits (0, max, max+1) and every shorter-than-header input. */
@@ -88,7 +91,7 @@ static void test_errors(void)
 static void test_misc(void)
 {
     CHECK(dx_abi_version() == DX_ABI_VERSION);
-    for (int e = 0; e >= DX_ERR_TIMEOUT; e--)
+    for (int e = 0; e >= DX_ERR_REJECTED; e--)
         CHECK(strcmp(dx_strerror(e), "unknown error") != 0);
     CHECK(strcmp(dx_strerror(-999), "unknown error") == 0);
 }

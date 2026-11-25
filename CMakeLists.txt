@@ -7,6 +7,11 @@ set(CMAKE_C_EXTENSIONS OFF) # strict ISO C11: no accidental GNU-only code
 set(CMAKE_C_VISIBILITY_PRESET hidden) # export only DX_API symbols (see dx_export.h)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON) # the static lib can also be linked into shared objects
 
+# Strict ISO C11 hides POSIX functions (clock_gettime, sockets options) on glibc unless asked.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_compile_definitions(_GNU_SOURCE)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/CMake)
 include(compiler_warnings)
 include(sanitizers)
@@ -18,6 +23,7 @@ set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Core/Ctx/context.c Source/Core/Ctx/queue.c Source/Core/Ctx/listener.c
     Source/Core/Ctx/poll.c Source/Core/Conn/lifecycle.c Source/Core/Conn/sending.c
     Source/Core/Conn/receiving.c Source/Core/Conn/events.c Source/Core/Conn/maintenance.c
+    Source/Core/Hooks/hooks.c Source/Core/Hooks/dispatch.c Source/Core/Hooks/tunnel.c
     Generated/C/dx_registry.c)
 
 # Native I/O backends exist only on their own platform.
@@ -41,6 +47,8 @@ foreach(t duplex duplex_static)
     target_include_directories(${t} PRIVATE Source Source/Internal)
     dx_enable_warnings(${t})
 endforeach()
+
+add_subdirectory(Examples)
 
 enable_testing()
 add_subdirectory(Tests)
