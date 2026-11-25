@@ -120,4 +120,12 @@ static inline void pump_side(side* s, int timeout_ms)
         }                                                                                          \
     } while (0)
 
+/* Same, for a test with a single library side (the peer is a raw socket). */
+#define WAIT_SIDE(S, cond)                                                                         \
+    do {                                                                                           \
+        uint64_t t0_ = test_now_ms();                                                              \
+        while (!(cond) && test_now_ms() - t0_ < 10000)                                             \
+            pump_side(&(S), 1);                                                                    \
+    } while (0)
+
 #endif

@@ -55,6 +55,18 @@ if(DX_FUZZ)
                      ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus ${CMAKE_CURRENT_SOURCE_DIR}/Fuzz/Corpus)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus)
     set_tests_properties(fuzz_payload PROPERTIES LABELS Fuzz)
+
+    # Framing: arbitrary bytes arriving on a live connection (uses internal headers).
+    add_executable(fuzz_framing Fuzz/fuzz_framing.c)
+    target_include_directories(fuzz_framing PRIVATE ${CMAKE_SOURCE_DIR}/Source ${CMAKE_SOURCE_DIR}/Source/Internal)
+    target_link_libraries(fuzz_framing PRIVATE duplex_static)
+    target_compile_options(fuzz_framing PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(fuzz_framing PRIVATE -fsanitize=fuzzer,address,undefined)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus_framing)
+    add_test(NAME fuzz_framing
+             COMMAND fuzz_framing -max_total_time=${DX_FUZZ_SECONDS} -timeout=5
+                     ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus_framing ${CMAKE_CURRENT_SOURCE_DIR}/Fuzz/Corpus)
+    set_tests_properties(fuzz_framing PROPERTIES LABELS Fuzz)
 endif()
 
 # Generated/ must match Registry/protocol.toml. Needs Python 3.11+ (tomllib); skipped if absent.
@@ -112,3 +124,14 @@ function(dx_net_test name dir label)
 endfunction()
 
 dx_net_test(test_integration Integration Integration)
+dx_net_test(test_faults Faults Faults)
+dx_net_test(test_noalloc Memory Memory)
+dx_net_test(test_threads Concurrency Concurrency)
+dx_net_test(test_stress Stress Stress)
+# Short by default; `DX_STRESS_SECONDS=600 ctest -L Stress` runs the long version.
+find_package(Threads REQUIRED)
+target_link_libraries(test_threads PRIVATE Threads::Threads)
+
+# Rules the compiler cannot check: allocation only in context.c, no printing in the library.
+add_test(NAME source_rules COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/check_source_rules.sh)
+set_tests_properties(source_rules PROPERTIES LABELS Memory)

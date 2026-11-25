@@ -1,0 +1,164 @@
+/* test_stress.c - thousands of simultaneous connections, sustained traffic, memory drift.
+ * SPDX-License-Identifier: MIT */
+#include <stdlib.h>
+#include <sys/resource.h>
+
+#include "../net_test.h"
+#include "IO/net.h"
+
+/*
+ * Many clients (one context) talk to one server (another context) over loopback. Every
+ * connection sends pings in turn and the server answers each with a pong. We check that all
+ * connections come up, every ping gets exactly one pong, the process memory does not keep
+ * growing, and report the throughput.
+ * Duration: DX_STRESS_SECONDS (default 3). Connections: DX_STRESS_CONNS (default 10000, reduced
+ * automatically to what the file-descriptor limit allows: two sockets per connection).
+ */
+typedef struct {
+    dx_ctx* ctx;
+    unsigned connected, disconnected;
+    uint64_t pings, pongs;
+    int reply, bad;
+} peer;
+
+static void on_pkt(void* user, const dx_packet* p)
+{
+    peer* s = user;
+    switch (p->packet_id) {
+    case DX_SYS_CONNECTED:
+        s->connected++;
+        break;
+    case DX_SYS_DISCONNECTED:
+        s->disconnected++;
+        break;
+    case DX_PKT_PING:
+        s->pings++;
+        if (s->reply) s->bad += dx_send(s->ctx, p->conn, DX_PKT_PONG, p->data, p->length) < 0;
+        break;
+    case DX_PKT_PONG:
+        s->pongs++;
+        break;
+    default:
+        s->bad++;
+    }
+}
+
+static void pump(peer* s)
+{
+    dx_packet pk[256];
+    int n = dx_poll(s->ctx, pk, 256, 0);
+    for (int i = 0; i < n; i++)
+        on_pkt(s, &pk[i]);
+    if (n > 0) dx_release(s->ctx, n);
+}
+
+static dx_ctx* make(unsigned conns)
+{
+    dx_config cfg;
+    dx_config_default(&cfg);
+    cfg.max_conns = conns + 1;
+    cfg.max_payload = 256;
+    cfg.rx_ring_bytes = 8u << 20;
+    cfg.rx_queue = 16384;
+    cfg.tx_bytes = 4096;
+    cfg.idle_timeout_ms = 3600000;
+    return dx_create(&cfg);
+}
+
+static long rss_kb(void)
+{
+    struct rusage u;
+    getrusage(RUSAGE_SELF, &u);
+#ifdef __APPLE__
+    return u.ru_maxrss / 1024; /* bytes on macOS */
+#else
+    return u.ru_maxrss; /* kilobytes on Linux */
+#endif
+}
+
+static unsigned env_or(const char* name, unsigned dflt)
+{
+    const char* v = getenv(name);
+    return v ? (unsigned)atoi(v) : dflt;
+}
+
+int main(void)
+{
+    long fds = dx_net_raise_fd_limit();
+    unsigned conns = env_or("DX_STRESS_CONNS", 10000);
+    unsigned max_by_fds = fds > 200 ? (unsigned)((fds - 100) / 2) : 50;
+    if (conns > max_by_fds) conns = max_by_fds;
+    unsigned seconds = env_or("DX_STRESS_SECONDS", 3);
+    printf("connections: %u (fd limit %ld), duration: %u s\n", conns, fds, seconds);
+
+    peer S = {0}, C = {0};
+    S.ctx = make(conns);
+    C.ctx = make(conns);
+    S.reply = 1;
+    CHECK(S.ctx && C.ctx);
+    dx_listen(S.ctx, "127.0.0.1", 0);
+    uint32_t* handle = malloc(sizeof(uint32_t) * conns);
+    /* Connect in bursts and serve the listener in between: the operating system keeps only a
+     * short queue of not-yet-accepted connections (128 on macOS) and refuses the overflow. */
+    unsigned opened = 0;
+    for (unsigned i = 0; i < conns; i++) {
+        if (dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &handle[i]) != DX_OK) {
+            /* The system refused (ports or descriptors exhausted): that is its maximum. */
+            printf("operating system limit reached after %u connections\n", i);
+            break;
+        }
+        opened++;
+        if (i % 64 == 63) { /* let the server accept the whole burst before the next one */
+            uint64_t w0 = test_now_ms();
+            while (S.connected < i + 1 && test_now_ms() - w0 < 5000) {
+                pump(&S);
+                pump(&C);
+            }
+        }
+    }
+    conns = opened;
+    CHECK(conns >= 1000); /* anything below would not be a stress test */
+    uint64_t t0 = test_now_ms();
+    while ((S.connected < conns || C.connected < conns) && test_now_ms() - t0 < 60000) {
+        pump(&S);
+        pump(&C);
+    }
+    CHECK(S.connected == conns && C.connected == conns);
+
+    /* Traffic: keep sending pings round-robin until the time is up. */
+    uint8_t b[4] = {1, 2, 3, 4};
+    uint64_t start = test_now_ms(), sent = 0, next = 0;
+    long rss_early = 0;
+    while (test_now_ms() - start < seconds * 1000u) {
+        for (int k = 0; k < 256; k++) {
+            if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;
+            next = (next + 1) % conns;
+        }
+        pump(&S);
+        pump(&C);
+        if (!rss_early && test_now_ms() - start > seconds * 250u) rss_early = rss_kb();
+    }
+    uint64_t t1 = test_now_ms();
+    while (C.pongs < sent && test_now_ms() - t1 < 30000) {
+        pump(&S);
+        pump(&C);
+    }
+    double secs = (double)(test_now_ms() - start) / 1000.0;
+    printf("pings sent %llu, pongs %llu, %.0f packets/s (round trips)\n", (unsigned long long)sent,
+           (unsigned long long)C.pongs, (double)C.pongs / secs);
+    CHECK(C.pongs == sent && S.pings == sent);
+    CHECK(S.bad == 0 && C.bad == 0 && S.disconnected == 0 && C.disconnected == 0);
+
+    /* Memory must not keep growing once traffic is steady (10 % plus 5 MB of slack). */
+    long rss_end = rss_kb();
+    printf("max RSS: %ld kB after 25%% of the run, %ld kB at the end\n", rss_early, rss_end);
+    CHECK(rss_end <= rss_early + rss_early / 10 + 5120);
+
+    /* The side that closes first keeps the sockets in TIME_WAIT for a while. Closing the server
+     * side first leaves the clients' ephemeral ports free, so tests run right after this one
+     * can still connect. */
+    dx_destroy(S.ctx);
+    dx_destroy(C.ctx);
+    free(handle);
+    return dx_test_done();
+}

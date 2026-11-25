@@ -161,8 +161,13 @@ long dx_net_raise_fd_limit(void)
 {
     struct rlimit rl;
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) return -1;
-    rl.rlim_cur = rl.rlim_max;
-    (void)setrlimit(RLIMIT_NOFILE, &rl);
+    /* Ask for the hard limit; macOS reports "unlimited" but refuses it, so fall back to
+     * progressively smaller values until the system accepts one. */
+    rlim_t wanted[] = {rl.rlim_max, 1048576, 65536, 20000, 10240};
+    for (size_t i = 0; i < sizeof wanted / sizeof wanted[0]; i++) {
+        struct rlimit try = {wanted[i] > rl.rlim_max ? rl.rlim_max : wanted[i], rl.rlim_max};
+        if (try.rlim_cur > rl.rlim_cur && setrlimit(RLIMIT_NOFILE, &try) == 0) break;
+    }
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) return -1;
     return (long)rl.rlim_cur;
 }
