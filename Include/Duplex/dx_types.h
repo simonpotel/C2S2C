@@ -8,6 +8,7 @@
  * Using names instead of raw numbers keeps the C code readable and lets other languages copy
  * the exact same values. Byte-level layout: DOCUMENTATION.md section 3.
  */
+#include <stddef.h>
 #include <stdint.h>
 
 /* Wire constants. They are macros (not enums) so every binding and the codegen can read them
@@ -83,5 +84,71 @@ typedef struct dx_reader {
     uint32_t pos;
     int err;
 } dx_reader;
+
+/* ---- Runtime (sockets) ---- */
+
+/** Opaque context: owns sockets, buffers and connections. Use it from ONE thread. */
+typedef struct dx_ctx dx_ctx;
+
+/** I/O backends (dx_config.backend). AUTO picks the best one of the platform. */
+#define DX_BACKEND_AUTO 0
+#define DX_BACKEND_POLL 1
+#define DX_BACKEND_EPOLL 2
+#define DX_BACKEND_KQUEUE 3
+#define DX_BACKEND_URING 4
+
+/** dx_config.flags: accept packets without checking their payload against the registry. */
+#define DX_CFG_NO_VALIDATE 0x1u
+
+/** System events delivered by dx_poll like packets (ids reserved for the library). */
+#define DX_SYS_CONNECTED 0x7F01u /* a connection is established; no payload */
+#define DX_SYS_DISCONNECTED                                                                        \
+    0x7F02u /* a connection is gone; payload = i32 reason (little-endian)                          \
+             */
+
+/** Optional custom allocator, used ONLY while creating and destroying a context. */
+typedef struct dx_alloc {
+    void* (*alloc)(size_t size, void* user);
+    void (*release)(void* ptr, void* user);
+    void* user;
+} dx_alloc;
+
+/**
+ * Context settings. Zero in a field means "default". All memory is reserved at dx_create from
+ * these values, so after creation the library never allocates.
+ * Memory use is about max_conns * (max_payload + 14 + tx_bytes) + rx_ring_bytes.
+ */
+typedef struct dx_config {
+    uint32_t size;            /* sizeof(dx_config): lets the struct grow without breaking ABI */
+    uint32_t max_conns;       /* default 256, at most 65535 */
+    uint32_t max_payload;     /* largest accepted payload; default 65536, at most DX_MAX_PAYLOAD */
+    uint32_t rx_ring_bytes;   /* storage of received packets; default 4 MiB, >= 2 * max_payload */
+    uint32_t rx_queue;        /* packets that can wait for the application; default 4096 */
+    uint32_t tx_bytes;        /* send buffer per connection; default 4 * (max_payload + 14) */
+    uint32_t flags;           /* DX_CFG_* */
+    uint32_t idle_timeout_ms; /* close silent connections after this long; default 60000 */
+    uint32_t backend;         /* DX_BACKEND_*; default AUTO */
+    dx_alloc alloc;           /* default malloc/free */
+} dx_config;
+
+/** A received packet or system event, valid until released with dx_release. */
+typedef struct dx_packet {
+    uint32_t conn;       /* connection handle */
+    uint32_t sequence;   /* sequence number from the header (0 for events) */
+    const uint8_t* data; /* payload, inside a library-owned ring (never NULL) */
+    uint32_t length;     /* payload size */
+    uint16_t packet_id;  /* registry id, or DX_SYS_* for events */
+    uint8_t flags;       /* header flags (0 for events) */
+    uint8_t reserved;
+} dx_packet;
+
+/** A packet to send with dx_send_batch. */
+typedef struct dx_outgoing {
+    uint32_t conn;
+    uint16_t packet_id;
+    uint16_t reserved;
+    const uint8_t* data;
+    uint32_t length;
+} dx_outgoing;
 
 #endif

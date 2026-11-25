@@ -27,6 +27,11 @@ id = 0x0003
 fields = ["nonce:u32"]
 
 [[packet]]
+name = "upload"         # client sends a binary blob (file chunk, image...)
+id = 0x0004
+fields = ["data:bytes"]
+
+[[packet]]
 name = "login_ok"       # server accepts the login
 id = 0x8001
 fields = ["user_id:u32"]
@@ -40,6 +45,11 @@ fields = ["user_id:u32", "text:string", "timestamp:u64"]
 name = "pong"           # server answers a ping with the same nonce
 id = 0x8003
 fields = ["nonce:u32"]
+
+[[packet]]
+name = "download"       # server sends a binary blob
+id = 0x8005
+fields = ["data:bytes"]
 
 [[packet]]
 name = "user_list"      # server lists who is online

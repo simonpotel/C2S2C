@@ -12,9 +12,17 @@ include(compiler_warnings)
 include(sanitizers)
 
 # One source list feeds both libraries so they can never diverge.
-set(DX_SOURCES Source/Core/ctx.c Source/Core/header.c Source/Codec/encode.c
+set(DX_SOURCES Source/Core/version.c Source/Core/ctx.c Source/Core/conn.c Source/Core/header.c Source/Codec/encode.c
     Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c Source/Memory/ring.c Source/Memory/pool.c
+    Source/IO/io.c Source/IO/io_poll.c Source/IO/net.c
     Generated/C/dx_registry.c)
+
+# Native I/O backends exist only on their own platform.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND DX_SOURCES Source/IO/io_epoll.c)
+elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "BSD")
+    list(APPEND DX_SOURCES Source/IO/io_kqueue.c)
+endif()
 
 # Shared lib: what the bindings load (dx_export.h switches on dllexport on Windows).
 add_library(duplex SHARED ${DX_SOURCES})
@@ -26,6 +34,8 @@ set_target_properties(duplex_static PROPERTIES OUTPUT_NAME duplex_static)
 foreach(t duplex duplex_static)
     # Generated/C holds dx_packets.h (packet ids), which users include too.
     target_include_directories(${t} PUBLIC Include Generated/C)
+    # Private sources and internal headers (Source/Internal) are not visible to users.
+    target_include_directories(${t} PRIVATE Source Source/Internal)
     dx_enable_warnings(${t})
 endforeach()
 

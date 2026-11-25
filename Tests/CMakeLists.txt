@@ -4,7 +4,7 @@
 # The label lets run_all_tests.py select just the unit tests.
 function(dx_unit_test name)
     add_executable(${name} Unit/${name}.c)
-    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/Source)
+    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/Source ${CMAKE_SOURCE_DIR}/Source/Internal)
     target_link_libraries(${name} PRIVATE duplex_static)
     dx_enable_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
@@ -100,3 +100,15 @@ foreach(lang cpp python rust typescript)
         set_tests_properties(generated_${lang} PROPERTIES LABELS Generated)
     endif()
 endforeach()
+
+# Tests that run real sockets over loopback. Each one is a C program with its own label.
+function(dx_net_test name dir label)
+    add_executable(${name} ${dir}/${name}.c)
+    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/Source ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(${name} PRIVATE duplex_static)
+    dx_enable_warnings(${name})
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES LABELS ${label} TIMEOUT 120)
+endfunction()
+
+dx_net_test(test_integration Integration Integration)

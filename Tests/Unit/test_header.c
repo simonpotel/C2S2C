@@ -88,7 +88,7 @@ static void test_errors(void)
 static void test_misc(void)
 {
     CHECK(dx_abi_version() == DX_ABI_VERSION);
-    for (int e = 0; e >= DX_ERR_UNKNOWN_ID; e--)
+    for (int e = 0; e >= DX_ERR_TIMEOUT; e--)
         CHECK(strcmp(dx_strerror(e), "unknown error") != 0);
     CHECK(strcmp(dx_strerror(-999), "unknown error") == 0);
 }

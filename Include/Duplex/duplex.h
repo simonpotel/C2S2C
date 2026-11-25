@@ -98,6 +98,83 @@ DX_API int dx_payload_validate(uint16_t packet_id, const uint8_t* in, uint32_t l
 /** Name of a registered packet (e.g. "chat_message"), or NULL if unknown. Static string. */
 DX_API const char* dx_packet_name(uint16_t packet_id);
 
+/* Runtime: one context = one event loop owning sockets and buffers.
+ * Threading: a context must be used by ONE thread at a time (its owner). Several contexts may
+ * run in parallel in different threads. Typical loop:
+ *     dx_packet pk[64];
+ *     int n = dx_poll(ctx, pk, 64, 100);   // wait up to 100 ms, get up to 64 packets at once
+ *     for (i < n) handle(pk[i]);           // pk[i].data is valid until dx_release
+ *     dx_release(ctx, n);                  // give the memory back, in order
+ */
+
+/** Fills @p cfg with the default settings (all limits and the backend). */
+DX_API void dx_config_default(dx_config* cfg);
+
+/**
+ * Creates a context and reserves ALL its memory (see dx_config). @p cfg may be NULL (defaults).
+ * @return the context, or NULL if the settings are invalid or memory is short. The caller owns
+ * it and must call dx_destroy. Not thread-safe with other calls on the same context.
+ */
+DX_API dx_ctx* dx_create(const dx_config* cfg);
+
+/** Closes every socket and frees the context. NULL is allowed. Pointers from dx_poll die. */
+DX_API void dx_destroy(dx_ctx* ctx);
+
+/**
+ * Starts accepting connections on @p addr (numeric IPv4/IPv6, e.g. "127.0.0.1") and @p port
+ * (0 = let the system choose; read it back with dx_listen_port). One listener per context.
+ * @return DX_OK, DX_ERR_INVALID_ARG, DX_ERR_LIMIT (already listening) or DX_ERR_IO.
+ */
+DX_API int dx_listen(dx_ctx* ctx, const char* addr, uint16_t port);
+
+/** Port of the listener, or a negative error if the context is not listening. */
+DX_API int dx_listen_port(const dx_ctx* ctx);
+
+/**
+ * Starts connecting to @p addr:@p port without blocking; *out_conn gets the handle at once and
+ * packets may already be sent (they wait in the buffer). DX_SYS_CONNECTED arrives from dx_poll
+ * when the link is up, DX_SYS_DISCONNECTED if it fails.
+ * @return DX_OK, DX_ERR_INVALID_ARG, DX_ERR_LIMIT (no free connection slot) or DX_ERR_IO.
+ */
+DX_API int dx_connect(dx_ctx* ctx, const char* addr, uint16_t port, uint32_t* out_conn);
+
+/**
+ * Runs the event loop for up to @p timeout_ms (0 = do not wait, -1 = until something happens)
+ * and stores up to @p max packets / events in @p out. All of them stay valid until released.
+ * Packets arrive in order per connection; a connection's DX_SYS_DISCONNECTED comes after its
+ * last packet. Invalid traffic closes that connection with the reason in the event payload.
+ * If the application never releases, the receive buffer fills and reading pauses (the peers'
+ * TCP windows fill up): that is back-pressure, not data loss.
+ * @return the number of entries stored (0 on timeout) or a negative error (DX_ERR_INVALID_ARG).
+ */
+DX_API int dx_poll(dx_ctx* ctx, dx_packet* out, int max, int timeout_ms);
+
+/** Releases the @p count OLDEST entries handed out by dx_poll; their pointers become invalid. */
+DX_API void dx_release(dx_ctx* ctx, int count);
+
+/**
+ * Sends one packet: validates it (id direction and, unless DX_CFG_NO_VALIDATE, its payload),
+ * copies it into the connection's send buffer and writes what the socket accepts. The sequence
+ * number is assigned by the library. @p data is copied: the caller keeps ownership.
+ * @return DX_OK, DX_ERR_BAD_CONN, DX_ERR_BAD_ID (id direction does not match the connection's
+ * role: clients send ids without bit 15, servers with it), DX_ERR_TOO_LARGE, a payload error,
+ * or DX_ERR_WOULD_BLOCK when the send buffer is full (call dx_poll, then retry).
+ */
+DX_API int dx_send(dx_ctx* ctx, uint32_t conn, uint16_t packet_id, const uint8_t* data,
+                   uint32_t len);
+
+/**
+ * Sends @p count packets in order. Stops at the first failure.
+ * @return how many were sent, or the error of the first packet if none could be.
+ */
+DX_API int dx_send_batch(dx_ctx* ctx, const dx_outgoing* pkts, int count);
+
+/**
+ * Closes a connection gracefully: queued data is still sent, then the socket is closed and
+ * DX_SYS_DISCONNECTED (reason 0) is delivered. @return DX_OK or DX_ERR_BAD_CONN.
+ */
+DX_API int dx_close(dx_ctx* ctx, uint32_t conn);
+
 #ifdef __cplusplus
 }
 #endif

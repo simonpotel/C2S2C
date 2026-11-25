@@ -2,18 +2,22 @@
 pub const LOGIN: u16 = 0x0001;
 pub const CHAT_SEND: u16 = 0x0002;
 pub const PING: u16 = 0x0003;
+pub const UPLOAD: u16 = 0x0004;
 pub const LOGIN_OK: u16 = 0x8001;
 pub const CHAT_MESSAGE: u16 = 0x8002;
 pub const PONG: u16 = 0x8003;
 pub const USER_LIST: u16 = 0x8004;
+pub const DOWNLOAD: u16 = 0x8005;
 
 /// (id, name, schema)
 pub const PACKETS: &[(u16, &str, &str)] = &[
     (LOGIN, "login", "string"),
     (CHAT_SEND, "chat_send", "string"),
     (PING, "ping", "u32"),
+    (UPLOAD, "upload", "bytes"),
     (LOGIN_OK, "login_ok", "u32"),
     (CHAT_MESSAGE, "chat_message", "u32,string,u64"),
     (PONG, "pong", "u32"),
     (USER_LIST, "user_list", "array<string>"),
+    (DOWNLOAD, "download", "bytes"),
 ];

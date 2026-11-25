@@ -25,8 +25,8 @@ static void test_lookup(void)
     for (unsigned i = 0; i < dx_registry_count; i++)
         CHECK(strcmp(dx_packet_name(dx_registry[i].id), dx_registry[i].name) == 0);
     CHECK(strcmp(dx_packet_name(DX_PKT_CHAT_MESSAGE), "chat_message") == 0);
-    CHECK(dx_packet_name(0x0000) == NULL && dx_packet_name(0x0004) == NULL);
-    CHECK(dx_packet_name(0x8005) == NULL && dx_packet_name(0xFFFF) == NULL);
+    CHECK(dx_packet_name(0x0000) == NULL && dx_packet_name(0x0006) == NULL);
+    CHECK(dx_packet_name(0x8006) == NULL && dx_packet_name(0xFFFF) == NULL);
 }
 
 /* Validation by id: right layout passes, wrong layout and unknown id are rejected. */

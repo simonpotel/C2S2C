@@ -8,10 +8,12 @@
 #define DX_PKT_LOGIN 0x0001u
 #define DX_PKT_CHAT_SEND 0x0002u
 #define DX_PKT_PING 0x0003u
+#define DX_PKT_UPLOAD 0x0004u
 #define DX_PKT_LOGIN_OK 0x8001u
 #define DX_PKT_CHAT_MESSAGE 0x8002u
 #define DX_PKT_PONG 0x8003u
 #define DX_PKT_USER_LIST 0x8004u
+#define DX_PKT_DOWNLOAD 0x8005u
 
 /** One registry entry; the table dx_registry is sorted by id. */
 typedef struct dx_packet_info {

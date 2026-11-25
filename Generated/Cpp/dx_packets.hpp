@@ -6,19 +6,23 @@ namespace duplex::pkt {
 constexpr uint16_t LOGIN = 0x0001;
 constexpr uint16_t CHAT_SEND = 0x0002;
 constexpr uint16_t PING = 0x0003;
+constexpr uint16_t UPLOAD = 0x0004;
 constexpr uint16_t LOGIN_OK = 0x8001;
 constexpr uint16_t CHAT_MESSAGE = 0x8002;
 constexpr uint16_t PONG = 0x8003;
 constexpr uint16_t USER_LIST = 0x8004;
+constexpr uint16_t DOWNLOAD = 0x8005;
 
 struct Info { uint16_t id; const char* name; const char* schema; };
 inline constexpr Info all[] = {
     {LOGIN, "login", "string"},
     {CHAT_SEND, "chat_send", "string"},
     {PING, "ping", "u32"},
+    {UPLOAD, "upload", "bytes"},
     {LOGIN_OK, "login_ok", "u32"},
     {CHAT_MESSAGE, "chat_message", "u32,string,u64"},
     {PONG, "pong", "u32"},
     {USER_LIST, "user_list", "array<string>"},
+    {DOWNLOAD, "download", "bytes"},
 };
 }  // namespace duplex::pkt

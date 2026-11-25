@@ -1,9 +1,17 @@
 dx_abi_version
+dx_close
+dx_config_default
+dx_connect
+dx_create
+dx_destroy
 dx_header_decode
 dx_header_encode
+dx_listen
+dx_listen_port
 dx_packet_name
 dx_payload_validate
 dx_payload_validate_schema
+dx_poll
 dx_r_bytes
 dx_r_f32
 dx_r_f64
@@ -13,6 +21,9 @@ dx_r_u32
 dx_r_u64
 dx_r_u8
 dx_reader_init
+dx_release
+dx_send
+dx_send_batch
 dx_strerror
 dx_w_bytes
 dx_w_f32
