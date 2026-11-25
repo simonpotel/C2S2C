@@ -1,6 +1,13 @@
 /* io_poll.c - portable backend built on poll(2).
  * SPDX-License-Identifier: MIT */
+#ifdef _WIN32
+#include <winsock2.h>
+#define poll(fds, n, timeout) WSAPoll((fds), (ULONG)(n), (timeout))
+typedef SOCKET poll_fd_t; /* winsock2.h defines struct pollfd (the same fields as POSIX) */
+#else
 #include <poll.h>
+typedef int poll_fd_t;
+#endif
 #include <string.h>
 
 #include "io.h"
@@ -50,14 +57,14 @@ static short to_poll(uint8_t events)
 static int find(const dx_io* io, int fd)
 {
     for (uint32_t i = 0; i < io->count; i++)
-        if (io->fds[i].fd == fd) return (int)i;
+        if (io->fds[i].fd == (poll_fd_t)fd) return (int)i;
     return -1;
 }
 
 static int poll_add(dx_io* io, int fd, void* tag, uint8_t events)
 {
     if (io->count == io->cap) return DX_ERR_LIMIT;
-    io->fds[io->count] = (struct pollfd){fd, to_poll(events), 0};
+    io->fds[io->count] = (struct pollfd){(poll_fd_t)fd, to_poll(events), 0};
     io->tags[io->count++] = tag;
     return DX_OK;
 }

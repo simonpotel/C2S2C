@@ -19,6 +19,13 @@
 #define MSG_NOSIGNAL 0 /* macOS: SIGPIPE is disabled per socket with SO_NOSIGPIPE instead */
 #endif
 
+int dx_net_init(void)
+{
+    return DX_OK;
+}
+
+void dx_net_shutdown(void) {}
+
 /* Turns "127.0.0.1" or "::1" into a socket address. Names are not resolved on purpose: a DNS
  * lookup can block for seconds, which an event loop must never do. */
 static int parse_addr(const char* text, uint16_t port, struct sockaddr_storage* ss, socklen_t* len)

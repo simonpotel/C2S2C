@@ -12,6 +12,10 @@
  * >= 0 on success or a DX_ERR_* code (negative).
  */
 
+/** Prepares the socket layer (Winsock on Windows, nothing elsewhere). Pair with dx_net_shutdown. */
+int dx_net_init(void);
+void dx_net_shutdown(void);
+
 /** Creates a listening socket on a numeric address; returns its fd, sets *bound_port. */
 int dx_net_listen(const char* addr, uint16_t port, uint16_t* bound_port);
 

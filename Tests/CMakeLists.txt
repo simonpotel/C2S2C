@@ -29,10 +29,13 @@ foreach(bin ${DX_VECTORS})
 endforeach()
 
 # Repository checks, run by ctest like any other test (see the scripts for what they verify).
+# They need a POSIX shell and nm, so they run everywhere except Windows.
+if(NOT WIN32)
 add_test(NAME naming COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/check_naming.sh)
 set_tests_properties(naming PROPERTIES LABELS Naming)
 add_test(NAME abi COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/check_abi.sh $<TARGET_FILE:duplex>)
 set_tests_properties(abi PROPERTIES LABELS Abi)
+endif()
 
 # Randomized round trips (seeded, replayable with DX_SEED).
 add_executable(test_property Property/test_property.c)
@@ -90,6 +93,8 @@ target_link_libraries(test_generated_c PRIVATE duplex_static)
 dx_enable_warnings(test_generated_c)
 add_test(NAME generated_c COMMAND test_generated_c ${DX_GOLDEN})
 
+set_tests_properties(generated_c PROPERTIES LABELS Generated)
+if(NOT WIN32)
 find_program(DX_CXX NAMES c++ clang++ g++)
 if(DX_CXX)
     add_test(NAME generated_cpp COMMAND sh -c
@@ -113,12 +118,12 @@ if(DX_NODE)
                  ${DX_GEN_TESTS}/TypeScript/test_generated.ts ${DX_GOLDEN})
     endif()
 endif()
-set_tests_properties(generated_c PROPERTIES LABELS Generated)
 foreach(lang cpp python rust typescript)
     if(TEST generated_${lang})
         set_tests_properties(generated_${lang} PROPERTIES LABELS Generated)
     endif()
 endforeach()
+endif()
 
 # Tests that run real sockets over loopback. Each one is a C program with its own label.
 function(dx_net_test name dir label)
@@ -131,9 +136,16 @@ function(dx_net_test name dir label)
 endfunction()
 
 dx_net_test(test_integration Integration Integration)
+dx_net_test(test_noalloc Memory Memory)
+
+# Windows validates the library, the C tests, integration and memory tests. Everything below needs
+# a POSIX system (raw sockets, pthreads, sh, the other languages' toolchains).
+if(WIN32)
+    return()
+endif()
+
 dx_net_test(test_faults Faults Faults)
 dx_net_test(test_hooks Integration Integration)
-dx_net_test(test_noalloc Memory Memory)
 dx_net_test(test_threads Concurrency Concurrency)
 dx_net_test(test_stress Stress Stress)
 # Short by default; `DX_STRESS_SECONDS=600 ctest -L Stress` runs the long version.
@@ -254,8 +266,24 @@ endif()
 
 # WebAssembly codec: built with clang's wasm32 target and wasm-ld (no Emscripten needed), tested
 # with the shared vectors, and the web chat run end to end (gateway + WebSocket client code).
-find_program(DX_WASM_CLANG clang PATHS /opt/homebrew/opt/llvm/bin /usr/lib/llvm-18/bin /usr/lib/llvm-17/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
-find_program(DX_WASM_LD wasm-ld PATHS /opt/homebrew/bin /opt/homebrew/opt/llvm/bin /usr/lib/llvm-18/bin /usr/lib/llvm-17/bin /usr/local/bin)
+# The WebAssembly build needs a clang that knows the wasm32 target (Apple's does not, Homebrew's and
+# Linux packages' do) and wasm-ld. Take the first clang that can really compile for wasm32.
+set(DX_WASM_CLANG "")
+foreach(candidate /opt/homebrew/opt/llvm/bin/clang /usr/local/opt/llvm/bin/clang clang-19 clang-18 clang-17 clang)
+    if(NOT DX_WASM_CLANG)
+        find_program(DX_WASM_CAND_${candidate} ${candidate})
+        if(DX_WASM_CAND_${candidate})
+            file(WRITE ${CMAKE_BINARY_DIR}/wasm_probe.c "int dx_probe(void) { return 0; }\n")
+            execute_process(COMMAND ${DX_WASM_CAND_${candidate}} --target=wasm32 -c ${CMAKE_BINARY_DIR}/wasm_probe.c
+                            -o ${CMAKE_BINARY_DIR}/wasm_probe.o RESULT_VARIABLE probe_rc OUTPUT_QUIET ERROR_QUIET)
+            if(probe_rc EQUAL 0)
+                set(DX_WASM_CLANG ${DX_WASM_CAND_${candidate}})
+            endif()
+        endif()
+    endif()
+endforeach()
+find_program(DX_WASM_LD NAMES wasm-ld wasm-ld-19 wasm-ld-18 wasm-ld-17
+             PATHS /opt/homebrew/bin /opt/homebrew/opt/llvm/bin /usr/local/bin /usr/lib/llvm-19/bin /usr/lib/llvm-18/bin /usr/lib/llvm-17/bin)
 if(DX_WASM_CLANG AND DX_WASM_LD AND TEST test_node)
     set(DX_WASM_FILE ${CMAKE_BINARY_DIR}/Wasm/duplex_codec.wasm)
     file(GLOB DX_WASM_SOURCES ${CMAKE_SOURCE_DIR}/Bindings/Wasm/Source/*.c ${CMAKE_SOURCE_DIR}/Source/*/*.c)

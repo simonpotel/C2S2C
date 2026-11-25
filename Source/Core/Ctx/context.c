@@ -87,6 +87,7 @@ static void release_all(dx_ctx* ctx)
     a->release(ctx->handlers, a->user);
     a->release(ctx->tunnels, a->user);
     a->release(ctx, a->user);
+    dx_net_shutdown(); /* pairs with dx_net_init in dx_create */
 }
 
 dx_ctx* dx_create(const dx_config* user_cfg)
@@ -102,8 +103,12 @@ dx_ctx* dx_create(const dx_config* user_cfg)
     uint32_t q_cap = cfg.rx_queue + 2u * cfg.max_conns; /* + room for connect/disconnect events */
     if (rx_total > SIZE_MAX / 2 || tx_total > SIZE_MAX / 2) return NULL;
 
+    if (dx_net_init() != DX_OK) return NULL;
     dx_ctx* ctx = cfg.alloc.alloc(sizeof *ctx, cfg.alloc.user);
-    if (!ctx) return NULL;
+    if (!ctx) {
+        dx_net_shutdown();
+        return NULL;
+    }
     memset(ctx, 0, sizeof *ctx);
     ctx->cfg = cfg;
     ctx->ops = ops;

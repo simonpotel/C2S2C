@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "Duplex/duplex.h"
 #include "check.h"
@@ -25,12 +28,19 @@ static inline uint32_t test_backend(void)
     return v ? (uint32_t)atoi(v) : DX_BACKEND_AUTO;
 }
 
+#ifdef _WIN32
+static inline uint64_t test_now_ms(void)
+{
+    return (uint64_t)GetTickCount64();
+}
+#else
 static inline uint64_t test_now_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
 }
+#endif
 
 /* What a test remembers about one side (client or server) of a conversation. */
 typedef struct side {

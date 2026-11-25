@@ -5,7 +5,7 @@
 #include "Duplex/duplex.h"
 #include "dx_simd.h"
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__x86_64__)
 #include <cpuid.h>
 #elif defined(__aarch64__) && defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -22,7 +22,7 @@
  */
 int dx_cpu_has_crc32c(void)
 {
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__x86_64__)
     unsigned eax, ebx, ecx, edx;
     return __get_cpuid(1, &eax, &ebx, &ecx, &edx) && (ecx & (1u << 20)); /* SSE4.2 */
 #elif defined(__aarch64__) && defined(__APPLE__)

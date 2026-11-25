@@ -3,7 +3,9 @@ project(Duplex VERSION 0.1.0 LANGUAGES C)
 
 # The C++ binding is optional: it is built and tested only if a C++ compiler exists.
 include(CheckLanguage)
-check_language(CXX)
+if(NOT WIN32) # (the C++ binding is not part of the Windows build)
+    check_language(CXX)
+endif()
 if(CMAKE_CXX_COMPILER)
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 17)
@@ -29,7 +31,7 @@ include(sanitizers)
 # One source list feeds both libraries so they can never diverge.
 set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c Source/Memory/ring.c Source/Memory/pool.c
-    Source/IO/io.c Source/IO/io_poll.c Source/IO/net.c
+    Source/IO/io.c Source/IO/io_poll.c
     Source/Core/Ctx/context.c Source/Core/Ctx/queue.c Source/Core/Ctx/listener.c
     Source/Core/Ctx/poll.c Source/Core/Conn/lifecycle.c Source/Core/Conn/sending.c
     Source/Core/Conn/receiving.c Source/Core/Conn/events.c Source/Core/Conn/maintenance.c
@@ -37,6 +39,13 @@ set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Simd/crc32_armv8.c Source/Simd/crc32_none.c
     Source/Core/Hooks/hooks.c Source/Core/Hooks/dispatch.c Source/Core/Hooks/tunnel.c
     Generated/C/dx_registry.c)
+
+# Socket layer: Winsock on Windows, BSD sockets elsewhere.
+if(WIN32)
+    list(APPEND DX_SOURCES Source/IO/net_win32.c)
+else()
+    list(APPEND DX_SOURCES Source/IO/net.c)
+endif()
 
 # Native I/O backends exist only on their own platform.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -58,9 +67,14 @@ foreach(t duplex duplex_static)
     # Private sources and internal headers (Source/Internal) are not visible to users.
     target_include_directories(${t} PRIVATE Source Source/Internal)
     dx_enable_warnings(${t})
+    if(WIN32)
+        target_link_libraries(${t} PUBLIC ws2_32) # Winsock
+    endif()
 endforeach()
 
-add_subdirectory(Examples)
+if(NOT WIN32)
+    add_subdirectory(Examples)
+endif()
 
 enable_testing()
 add_subdirectory(Tests)

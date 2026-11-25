@@ -1,15 +1,67 @@
 name: ci
 on: [push, pull_request]
+
 jobs:
-  test:
+  # Linux and macOS, x86-64 and arm64: debug build with the full suite, then AddressSanitizer +
+  # UBSan, and ThreadSanitizer on Linux. Python, Node, Rust and a wasm-capable clang are installed
+  # so the bindings, the WebAssembly codec and the cross-language matrix run too.
+  posix:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
+    env:
+      DX_STRESS_SECONDS: "2"
     steps:
       - uses: actions/checkout@v4
-      - run: pip install ninja  # presets use the Ninja generator
-      # Full suite: naming, unit, vectors, ABI.
-      - run: cmake --preset debug && cmake --build --preset debug && ctest --preset debug
-      # Same unit tests under AddressSanitizer + UBSan to catch memory errors and UB.
-      - run: cmake --preset asan && cmake --build --preset asan && ctest --preset asan
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - name: Tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build clang lld
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja llvm lld
+      - name: Debug build and full suite
+        run: cmake --preset debug && cmake --build --preset debug && ctest --preset debug
+      - name: AddressSanitizer + UBSan
+        run: cmake --preset asan && cmake --build --preset asan && ctest --preset asan
+      - name: ThreadSanitizer
+        if: runner.os == 'Linux'
+        run: cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan
+
+  # Windows: the library (Winsock, WSAPoll backend), the C unit/property/vector tests and the
+  # integration and memory tests. No IOCP backend yet (see DOCUMENTATION.md).
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, arch: x64 }
+          - { os: windows-11-arm, arch: arm64 }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: clang
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: { arch: "${{ matrix.arch }}" }
+      - run: pip install ninja
+      - run: cmake --preset debug
+      - run: cmake --build --preset debug
+      - run: ctest --preset debug
+
+  # Fuzzing: 20 seconds per target with libFuzzer under ASan/UBSan.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build clang libclang-rt-dev
+      - run: |
+          export CC=clang
+          cmake --preset fuzz -DDX_FUZZ_SECONDS=20
+          cmake --build --preset fuzz
+          ctest --preset fuzz -L Fuzz
