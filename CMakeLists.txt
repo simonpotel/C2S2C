@@ -12,9 +12,12 @@ include(compiler_warnings)
 include(sanitizers)
 
 # One source list feeds both libraries so they can never diverge.
-set(DX_SOURCES Source/Core/version.c Source/Core/ctx.c Source/Core/conn.c Source/Core/header.c Source/Codec/encode.c
+set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c Source/Memory/ring.c Source/Memory/pool.c
     Source/IO/io.c Source/IO/io_poll.c Source/IO/net.c
+    Source/Core/Ctx/context.c Source/Core/Ctx/queue.c Source/Core/Ctx/listener.c
+    Source/Core/Ctx/poll.c Source/Core/Conn/lifecycle.c Source/Core/Conn/sending.c
+    Source/Core/Conn/receiving.c Source/Core/Conn/events.c Source/Core/Conn/maintenance.c
     Generated/C/dx_registry.c)
 
 # Native I/O backends exist only on their own platform.

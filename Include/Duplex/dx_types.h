@@ -85,7 +85,7 @@ typedef struct dx_reader {
     int err;
 } dx_reader;
 
-/* ---- Runtime (sockets) ---- */
+/* Runtime types (sockets, event loop). */
 
 /** Opaque context: owns sockets, buffers and connections. Use it from ONE thread. */
 typedef struct dx_ctx dx_ctx;

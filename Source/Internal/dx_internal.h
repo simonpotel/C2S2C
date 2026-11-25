@@ -68,18 +68,35 @@ struct dx_ctx {
     uint64_t next_scan_ms;
 };
 
-/* conn.c */
+/* Core/Conn/lifecycle.c: handles, opening and closing connections */
+uint32_t dx_conn_handle(const dx_ctx* ctx, const dx_conn* c);
+dx_conn* dx_conn_lookup(const dx_ctx* ctx, uint32_t handle);
+void dx_conn_update_interest(dx_ctx* ctx, dx_conn* c);
 int dx_conn_adopt(dx_ctx* ctx, int fd, int server_side, int connecting, uint32_t* handle);
-void dx_conn_on_event(dx_ctx* ctx, dx_conn* c, const dx_io_event* ev, int can_read);
 void dx_conn_close_now(dx_ctx* ctx, dx_conn* c, int reason);
-void dx_conn_retry_stalled(dx_ctx* ctx);
-void dx_conn_expire_idle(dx_ctx* ctx);
 void dx_conn_close_all(dx_ctx* ctx);
 
-/* ctx.c: queue of packets and events for the application */
+/* Core/Conn/sending.c: the send buffer */
+void dx_conn_flush(dx_ctx* ctx, dx_conn* c);
+
+/* Core/Conn/receiving.c: reading bytes and cutting them into packets */
+void dx_conn_read(dx_ctx* ctx, dx_conn* c);
+void dx_conn_parse(dx_ctx* ctx, dx_conn* c);
+
+/* Core/Conn/events.c: reacting to what the I/O backend reports */
+void dx_conn_on_event(dx_ctx* ctx, dx_conn* c, const dx_io_event* ev, int can_read);
+
+/* Core/Conn/maintenance.c: periodic work over all connections */
+void dx_conn_retry_stalled(dx_ctx* ctx);
+void dx_conn_expire_idle(dx_ctx* ctx);
+
+/* Core/Ctx/queue.c: the queue of packets and events handed to the application */
 int dx_ctx_has_room(const dx_ctx* ctx);
 int dx_ctx_deliver(dx_ctx* ctx, uint32_t conn, uint16_t id, uint8_t flags, uint32_t seq,
                    const uint8_t* payload, uint32_t len);
 void dx_ctx_event(dx_ctx* ctx, uint32_t conn, uint16_t sys_id, int32_t reason);
+
+/* Core/Ctx/listener.c */
+void dx_ctx_accept_all(dx_ctx* ctx);
 
 #endif
