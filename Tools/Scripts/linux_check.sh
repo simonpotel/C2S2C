@@ -15,7 +15,7 @@ DOCKERFILE
 # The source is mounted read-only and copied, so Linux builds never touch the host's Build/.
 docker run --rm --security-opt seccomp=unconfined -v "$PWD":/src:ro duplex-linux-check sh -c '
     mkdir /work
-    tar -C /src --exclude=Build --exclude=.git -cf - . | tar -C /work -xf -
+    tar -C /src --exclude=Build --exclude=.git --exclude=Cargo.lock -cf - . | tar -C /work -xf -
     cd /work
     for p in '"$presets"'; do
         echo "=== $p ==="

@@ -58,7 +58,7 @@ static dx_ctx* make(unsigned conns)
     dx_config_default(&cfg);
     cfg.max_conns = conns + 1;
     cfg.max_payload = 256;
-    cfg.rx_ring_bytes = 8u << 20;
+    cfg.rx_ring_bytes = 256u << 10; /* small, so a short warm-up wraps it and touches all of it */
     cfg.rx_queue = 16384;
     cfg.tx_bytes = 4096;
     cfg.idle_timeout_ms = 3600000;
@@ -142,10 +142,23 @@ int main(void)
         pump(&S);
         pump(&C);
     }
+    /* Then enough traffic to wrap the receive ring around several times: the ring, the queue and
+     * the buffers are reserved up front but the operating system only counts a page once it was
+     * touched, so the baseline must be taken after everything was touched at least once. */
+    uint64_t next = 0, warm_target = sent + 200000;
+    w1 = test_now_ms();
+    while (C.pongs < warm_target && test_now_ms() - w1 < 120000) {
+        for (int k = 0; k < 256 && sent < warm_target; k++) {
+            if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;
+            next = (next + 1) % conns;
+        }
+        pump(&S);
+        pump(&C);
+    }
     long rss_early = rss_kb();
 
     /* Traffic: keep sending pings round-robin until the time is up. */
-    uint64_t start = test_now_ms(), next = 0;
+    uint64_t start = test_now_ms();
     while (test_now_ms() - start < seconds * 1000u) {
         for (int k = 0; k < 256; k++) {
             if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;

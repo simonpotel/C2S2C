@@ -159,7 +159,7 @@ static void test_hooks_and_tunnel_errors(void)
     dx_hooks short_hooks = {4, 0, NULL, NULL, NULL, NULL, NULL, NULL};
     CHECK(dx_set_hooks(NULL, NULL) == DX_ERR_INVALID_ARG);
     CHECK(dx_set_hooks(ctx, &short_hooks) == DX_ERR_INVALID_ARG); /* structure too short */
-    CHECK(dx_set_hooks(ctx, NULL) == DX_OK);                /* NULL removes every hook */
+    CHECK(dx_set_hooks(ctx, NULL) == DX_OK);                      /* NULL removes every hook */
     CHECK(dx_on_packet(NULL, DX_PKT_PING, NULL, NULL) == DX_ERR_INVALID_ARG);
     CHECK(dx_on_packet(ctx, 0x1234, NULL, NULL) == DX_ERR_UNKNOWN_ID);
 

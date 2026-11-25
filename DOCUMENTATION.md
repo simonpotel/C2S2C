@@ -1,32 +1,49 @@
 # Duplex
 
 A small C library that defines a **binary packet protocol** between a client and a server, so
-programs in different languages (C, Python, Rust, Node…) can talk to each other with the same
-bytes. **CTOS** = client → server, **STOC** = server → client.
+programs in different languages (C, C++, Python, Rust, Node, browsers) can talk to each other with
+the same bytes, and that runs the sockets and event loop for you. **CTOS** = client → server,
+**STOC** = server → client. Typical use: a real-time game or chat backend made of services in
+several languages.
 
-Typical use: a real-time game or chat backend made of services in several languages.
-
-**Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
-with code generation, TCP client/server runtime (batched, no allocation after start), handlers,
-hooks and tunnels exist too. Bindings: C++, Python, Rust, Node/TypeScript and the browser (WebAssembly) done (bottom of this page).
-
-## Quick start
+## In two minutes
 
 ```bash
-cmake --preset debug && cmake --build --preset debug
-ctest --preset debug
+cmake --preset debug && cmake --build --preset debug      # needs CMake ≥ 3.20, Ninja, a C11 compiler
+ctest --preset debug                                      # all tests available on this machine
 ```
+
+A packet server that answers `ping` with `pong` (full chat example: `Examples/C/Server`):
 
 ```c
 #include <Duplex/duplex.h>
+#include "dx_packets.h"                                   /* DX_PKT_PING, DX_PKT_PONG... (generated) */
 
-dx_header h = {DX_MAGIC, DX_PROTOCOL_VERSION, 0, /*packet_id*/ 1, /*length*/ 5, /*seq*/ 7};
-uint8_t wire[DX_HEADER_SIZE];
-int rc = dx_header_encode(&h, wire);     /* 0 = ok, negative = error */
-if (rc < 0) puts(dx_strerror(rc));
+dx_ctx* ctx = dx_create(NULL);                            /* all memory reserved here */
+dx_listen(ctx, "127.0.0.1", 0);                           /* port 0 = any; dx_listen_port(ctx) says which */
+dx_packet pk[64];
+for (;;) {
+    int n = dx_poll(ctx, pk, 64, 100);                    /* wait up to 100 ms, up to 64 packets at once */
+    for (int i = 0; i < n; i++)
+        if (pk[i].packet_id == DX_PKT_PING)               /* pk[i].data points into a library ring */
+            dx_send(ctx, pk[i].conn, DX_PKT_PONG, pk[i].data, pk[i].length);
+    dx_release(ctx, n);                                   /* give the memory back */
+}
 ```
 
-Requirements: CMake ≥ 3.20, Ninja, a C11 compiler, a POSIX shell with `git` and `nm`.
+Where to go next:
+
+| I want to… | Read |
+|---|---|
+| know what is on the wire | [The header](#the-header-14-bytes-little-endian), [The payload](#the-payload) |
+| define my own packets | [The packet registry](#the-packet-registry) (`Registry/protocol.toml`) |
+| run a server or client in C | [Running a server and a client](#running-a-server-and-a-client) |
+| react with callbacks, filter, proxy | [Handlers, hooks and tunnels](#handlers-hooks-and-tunnels) |
+| use another language | [Using it from other languages](#using-it-from-other-languages) |
+| see speed and tests | [Checksum and performance](#checksum-and-performance), [Tests](#tests) |
+
+**State of the project:** everything described here exists and is tested; what is missing is
+listed at the end ([Planned](#planned)).
 
 ## The header (14 bytes, little-endian)
 
@@ -171,6 +188,7 @@ hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + 
 | `DX_BACKEND_POLL` | Unix | portable, scans every socket: fine for hundreds of connections |
 | `DX_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
 | `DX_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
+| (Windows) | Windows | `DX_BACKEND_AUTO` means `WSAPoll` through the poll backend; **there is no IOCP backend yet** |
 | `DX_BACKEND_URING` | Linux ≥ 5.11 | io_uring: readiness requests and answers travel through shared queues (fewer system calls); `dx_create` returns NULL if the kernel or sandbox refuses it |
 
 ## Using it from other languages
@@ -251,6 +269,19 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
 
+## Platforms and CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
+
+| Platform | What runs |
+|---|---|
+| Linux x86-64 and arm64, macOS arm64 and x86-64 | everything: debug suite (C tests, bindings in C++/Python/Rust/Node, WebAssembly, 5×5 matrix), then AddressSanitizer + UBSan, and ThreadSanitizer on Linux |
+| Windows x86-64 and arm64 | the library (Winsock + `WSAPoll`) and the C unit, property, vector, integration and memory tests (clang from the runner, MSVC runtime). The bindings, shell-based checks, raw-socket fault tests and threads test are not ported |
+| Linux (fuzz job) | both libFuzzer targets for 20 s each |
+
+Locally on a Mac: `Tools/Scripts/linux_check.sh` runs debug/asan/tsan on Linux in Docker (and the
+io_uring and poll backends), `Tools/Scripts/coverage.sh` measures coverage (see Tests).
+
 ## Why it is built this way
 
 - **Magic + fixed header + length**: same idea as file signatures and length-prefixed protocols.
@@ -263,53 +294,26 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 ## Layout
 
-`Include/Duplex/` public headers · `Source/Core/` header logic, registry lookup · `Source/Core/Ctx/` context, event loop, delivery queue, listener · `Source/Core/Conn/` one connection: lifecycle, sending, receiving (framing), events, maintenance · `Source/IO/` I/O backends (poll, epoll, kqueue) and the socket layer · `Registry/` packet definitions · `Generated/<Lang>/` generated tables · `Tools/Codegen/` generator · `Source/Memory/` ring buffer and slot pool (no allocation, caller gives the memory) · `Source/Codec/` byte order, payload read/write, UTF-8 ·
-`CMake/` build modules · `Tests/` tests · `Tools/Scripts/` shell checks.
-
-## Tests
-
-`ctest --preset debug` prints a pass/fail table. Library tests are C; the two repository checks
-are short shell scripts.
-
-| Check | What it proves |
+| Folder | What is in it |
 |---|---|
-| Naming | folders PascalCase, files snake_case, no case-only clashes (macOS/Windows are case-insensitive) |
-| Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
-| Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
-| Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
-| Generated | one test per language (`Tests/Generated/<Lang>/`) checks that its generated code lists the same packets, names and layouts as `Generated/registry.txt`; C always runs, C++/Python/Rust/TypeScript run if `c++`, Python 3.11+, `rustc`, `node` (22.6+) are installed |
-| Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
-| Integration | real server and client over loopback on every backend: handshake, ping/pong, 1 MiB both ways, 10 000 ordered packets, clean close from either side; handlers, hooks and a filtering tunnel |
-| Faults | a raw socket sends hostile traffic: 1 byte at a time, bad magic/version/flags/direction/sequence/id, huge lengths, bad UTF-8, hang-up mid-packet, slowloris, flood with back-pressure |
-| Memory | after warm-up the allocator hook counts **zero** calls during traffic and connection churn, and nothing leaks; `check_source_rules.sh` forbids allocation and printing outside `context.c` |
-| Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
-| Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
-| Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks |
-| Wasm | the WebAssembly codec passes the same reference vectors as C; the web chat runs end to end (gateway, WebSocket client code, C server) and the page and every module it imports are fetched like a browser would |
-| Examples | the chat server and client of each language run as separate processes |
-| CrossLanguage | one test per (client language, server language) pair, same scenario and checks |
-| Performance | `ctest -L Performance` (release): codec, CRC and loopback round-trip benchmarks compared with the machine's baseline; per-binding cost reports |
-| Fuzz | libFuzzer feeds random bytes to the decoders and to a live connection's framing under ASan/UBSan |
-| Abi | exported symbols equal `Tests/Abi/symbols.txt` |
-
-Extra runs (macOS needs Homebrew LLVM: `export CC=/opt/homebrew/opt/llvm/bin/clang`):
-
-```bash
-cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # memory errors, UB
-cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fuzz, 10 s per target
-```
-
-Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
-so run `Tools/Scripts/linux_check.sh` (Docker, Ubuntu) to run debug, asan and tsan on Linux, which
-also exercises the epoll backend, and replays the runtime tests on poll and io_uring. Any runtime
-test can be pointed at a backend with `DX_TEST_BACKEND=<n>` (1 poll, 2 epoll, 3 kqueue, 4 io_uring). Coverage of `Source/`: 100 % lines, about 98 % branches.
-
-Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
-(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
-Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
+| `Include/Duplex/` | the public headers (the contract) |
+| `Source/Core/` | header logic, registry lookup; `Ctx/` context, event loop, delivery queue, listener; `Conn/` one connection (lifecycle, sending, receiving, events, maintenance); `Hooks/` handlers, hooks, tunnels |
+| `Source/Codec/` | byte order, payload writer/reader, UTF-8 |
+| `Source/Memory/` | ring buffer and slot pool (no allocation: the caller gives the memory) |
+| `Source/IO/` | I/O backends (poll, epoll, kqueue, io_uring) and the socket layer (BSD sockets, Winsock) |
+| `Source/Simd/` | CRC-32C: CPU detection, hardware and portable versions |
+| `Registry/`, `Generated/<Lang>/`, `Tools/Codegen/` | packet definitions, generated tables per language, the generator |
+| `Bindings/<Lang>/` | Cpp, Python, Rust, Node, Wasm |
+| `Examples/<Lang>/Server`, `Client`; `Examples/Web/` | the chat in every language; the web chat and its gateway |
+| `Tests/`, `Bench/` | all tests (`Unit`, `Property`, `Vectors`, `Integration`, `Faults`, `Fuzz`, `Memory`, `Concurrency`, `Stress`, `Generated`, `Bindings`, `Wasm`, `Examples`); benchmarks and baselines |
+| `Tools/Scripts/` | shell checks (naming, ABI, source rules, benchmark comparison, Linux/Docker run, coverage) |
+| `CMake/` | build modules (warnings, sanitizers, coverage) |
 
 ## Planned
 
-an IOCP backend for Windows · long fuzzing runs.
+- An **IOCP backend** for Windows (today Windows uses `WSAPoll`), and porting the bindings and
+  the shell-based checks to Windows.
+- Long runs: fuzzing for hours and the 10-minute stress run (`DX_STRESS_SECONDS=600`) were not
+  executed for this version; the short versions run in CI.
 
 License: MIT.
