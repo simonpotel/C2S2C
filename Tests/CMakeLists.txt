@@ -147,3 +147,64 @@ set_tests_properties(source_rules PROPERTIES LABELS Memory)
 add_test(NAME example_chat_c COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
          $<TARGET_FILE:chat_server> $<TARGET_FILE:chat_client>)
 set_tests_properties(example_chat_c PROPERTIES LABELS Examples TIMEOUT 60)
+set_property(GLOBAL APPEND PROPERTY DX_IMPLS "C|$<TARGET_FILE:chat_server>|$<TARGET_FILE:chat_client>")
+
+# C++ binding: its own tests, plus the C++ chat example run against the C++ server.
+if(CMAKE_CXX_COMPILER)
+    add_executable(test_cpp Bindings/Cpp/test_cpp.cpp)
+    target_include_directories(test_cpp PRIVATE ${CMAKE_SOURCE_DIR}/Bindings/Cpp ${CMAKE_SOURCE_DIR}/Generated/Cpp
+                                                ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_cpp PRIVATE duplex_static)
+    dx_enable_warnings(test_cpp)
+    add_test(NAME test_cpp COMMAND test_cpp)
+    set_tests_properties(test_cpp PROPERTIES LABELS Bindings TIMEOUT 60)
+
+    add_test(NAME example_chat_cpp COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
+             $<TARGET_FILE:chat_server_cpp> $<TARGET_FILE:chat_client_cpp>)
+    set_tests_properties(example_chat_cpp PROPERTIES LABELS Examples TIMEOUT 60)
+    set_property(GLOBAL APPEND PROPERTY DX_IMPLS "Cpp|$<TARGET_FILE:chat_server_cpp>|$<TARGET_FILE:chat_client_cpp>")
+endif()
+
+# Python binding: a copy of the package in the layout `pip install` would give, so tests and
+# examples import it exactly like a user would (PYTHONPATH + DUPLEX_LIBRARY).
+find_program(DX_PYTHON_ANY NAMES python3)
+if(DX_PYTHON_ANY)
+    set(DX_PYPKG ${CMAKE_BINARY_DIR}/PythonPackage)
+    file(GLOB DX_PY_SOURCES ${CMAKE_SOURCE_DIR}/Bindings/Python/Source/*.py)
+    foreach(f ${DX_PY_SOURCES})
+        get_filename_component(fname ${f} NAME)
+        configure_file(${f} ${DX_PYPKG}/duplex/${fname} COPYONLY)
+    endforeach()
+    configure_file(${CMAKE_SOURCE_DIR}/Generated/Python/duplex_registry.py ${DX_PYPKG}/duplex_registry.py COPYONLY)
+    set(DX_PY_ENV "PYTHONPATH=${DX_PYPKG}" "DUPLEX_LIBRARY=$<TARGET_FILE:duplex>")
+
+    add_test(NAME test_python COMMAND ${DX_PYTHON_ANY} ${CMAKE_CURRENT_SOURCE_DIR}/Bindings/Python/test_python.py)
+    set_tests_properties(test_python PROPERTIES LABELS Bindings TIMEOUT 120 ENVIRONMENT "${DX_PY_ENV}")
+
+    add_test(NAME example_chat_python COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
+             "${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Server/chat_server.py"
+             "${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Client/chat_client.py")
+    set_tests_properties(example_chat_python PROPERTIES LABELS Examples TIMEOUT 60 ENVIRONMENT "${DX_PY_ENV}")
+    set_property(GLOBAL APPEND PROPERTY DX_IMPLS
+        "Python|${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Server/chat_server.py|${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Client/chat_client.py")
+endif()
+
+# Cross-language matrix: every client implementation against every server implementation, same
+# scenario (Tests/Examples/chat_example.sh) and same checks. One ctest entry per pair, named
+# cross_<client>_to_<server>. Environment variables of every binding are set for all of them.
+get_property(DX_IMPLS GLOBAL PROPERTY DX_IMPLS)
+set(DX_CROSS_ENV ${DX_PY_ENV} ${DX_EXTRA_ENV})
+foreach(server_impl ${DX_IMPLS})
+    string(REPLACE "|" ";" server_parts "${server_impl}")
+    list(GET server_parts 0 server_name)
+    list(GET server_parts 1 server_cmd)
+    foreach(client_impl ${DX_IMPLS})
+        string(REPLACE "|" ";" client_parts "${client_impl}")
+        list(GET client_parts 0 client_name)
+        list(GET client_parts 2 client_cmd)
+        add_test(NAME cross_${client_name}_to_${server_name}
+                 COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh "${server_cmd}" "${client_cmd}")
+        set_tests_properties(cross_${client_name}_to_${server_name} PROPERTIES
+                             LABELS CrossLanguage TIMEOUT 60 ENVIRONMENT "${DX_CROSS_ENV}")
+    endforeach()
+endforeach()

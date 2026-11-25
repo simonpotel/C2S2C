@@ -8,7 +8,7 @@ Typical use: a real-time game or chat backend made of services in several langua
 
 **Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
 with code generation, TCP client/server runtime (batched, no allocation after start), handlers,
-hooks and tunnels exist too. Bindings for other languages are planned (bottom of this page).
+hooks and tunnels exist too. Bindings: C++ and Python done; Rust, Node/TypeScript and WASM are planned (bottom of this page).
 
 ## Quick start
 
@@ -172,6 +172,25 @@ hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + 
 | `DX_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
 | `DX_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
 
+## Using it from other languages
+
+All bindings wrap the same C library and share the packet ids from `Generated/<Lang>/`. Each has
+the same chat example (`Examples/<Lang>/Server|Client`, same command line, same output), and the
+**cross-language** tests run every client against every server.
+
+| Language | Where | How |
+|---|---|---|
+| C | `Include/Duplex/duplex.h` + `Generated/C/dx_packets.h` | link `libduplex` |
+| C++17 | `Bindings/Cpp/duplex.hpp` (header only) | `duplex::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `duplex::Error`, handlers/hooks are lambdas; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
+| Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (packet data is a zero-copy view that raises after release), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
+
+```python
+import duplex, duplex_registry as reg
+ctx = duplex.Context(); ctx.listen("127.0.0.1", 0)
+ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, bytes(p.data)))
+while True: ctx.dispatch(200)
+```
+
 ## API
 
 All functions are pure (no I/O, no allocation), so thread-safe; the caller owns all buffers.
@@ -226,7 +245,9 @@ are short shell scripts.
 | Memory | after warm-up the allocator hook counts **zero** calls during traffic and connection churn, and nothing leaks; `check_source_rules.sh` forbids allocation and printing outside `context.c` |
 | Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
 | Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
-| Examples | the C chat server and client run as separate processes |
+| Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks |
+| Examples | the chat server and client of each language run as separate processes |
+| CrossLanguage | one test per (client language, server language) pair, same scenario and checks |
 | Fuzz | libFuzzer feeds random bytes to the decoders and to a live connection's framing under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |
 
@@ -247,7 +268,7 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-io_uring and IOCP backends · bindings for C++, Python, Rust, Node, WASM · measured
+io_uring and IOCP backends · bindings for Rust, Node/TypeScript, WASM · measured
 optimisations and long fuzzing runs.
 
 License: MIT.

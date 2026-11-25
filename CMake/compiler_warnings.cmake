@@ -5,6 +5,6 @@ function(dx_enable_warnings target)
         target_compile_options(${target} PRIVATE /W4 /WX)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror -Wconversion
-            -Wshadow -Wcast-align -Wstrict-prototypes)
+            -Wshadow -Wcast-align $<$<COMPILE_LANGUAGE:C>:-Wstrict-prototypes>)
     endif()
 endfunction()

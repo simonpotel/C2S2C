@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 project(Duplex VERSION 0.1.0 LANGUAGES C)
 
+# The C++ binding is optional: it is built and tested only if a C++ compiler exists.
+include(CheckLanguage)
+check_language(CXX)
+if(CMAKE_CXX_COMPILER)
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF) # strict ISO C11: no accidental GNU-only code
