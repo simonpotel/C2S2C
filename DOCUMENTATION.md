@@ -8,7 +8,7 @@ Typical use: a real-time game or chat backend made of services in several langua
 
 **Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
 with code generation, TCP client/server runtime (batched, no allocation after start), handlers,
-hooks and tunnels exist too. Bindings: C++, Python, Rust and Node/TypeScript done; WASM is planned (bottom of this page).
+hooks and tunnels exist too. Bindings: C++, Python, Rust, Node/TypeScript and the browser (WebAssembly) done (bottom of this page).
 
 ## Quick start
 
@@ -186,6 +186,14 @@ the same chat example (`Examples/<Lang>/Server|Client`, same command line, same 
 | Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (packet data is a zero-copy view that raises after release), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
 | Rust | `Bindings/Rust` (crates `duplex-sys` = raw FFI, `duplex` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, duplex::Error>`; handlers/hooks are closures. Build with `DUPLEX_LIB_DIR=<folder of libduplex> cargo build` from `Bindings/Rust` |
 | Node ≥ 22.6 / TypeScript | `Bindings/Node` (N-API addon `Source/binding.c`, API in `Source/index.ts`, types in `index.d.ts`) | `Context`; `poll()` returns a `Batch` whose payloads are zero-copy `Uint8Array`s that are **detached** (length 0) on `batch.release()`; `dispatch()` runs handlers/hooks and releases for you; errors are `DuplexError`; `encode/decode` follow the registry (u64 as `bigint`). Node runs the `.ts` files directly (type stripping). Handlers and hooks run in the JS layer; `dx_tunnel` is C-only |
+| Browser (WebAssembly) | `Bindings/Wasm` (`build.sh`, `Source/duplex_wasm.ts`, `Source/duplex_web.ts`) | the codec (headers, payload and UTF-8 validation, registry, CRC-32C) compiled to a ~6 KB `.wasm` with plain clang `--target=wasm32` + `wasm-ld` (no Emscripten): `loadCodec(bytes)` then `WebClient.connect(wsUrl, codec)`; each WebSocket message is exactly one Duplex frame; no sockets, no event loop in the browser build |
+
+**Web chat:** `Examples/Web/Gateway/gateway.ts <server port>` serves `Examples/Web/Chat/index.html`
+and relays WebSockets to a Duplex TCP server (a browser cannot open raw TCP); it turns the page's
+TypeScript into JavaScript on the fly and serves only `Examples/Web/Chat`, `Bindings` and
+`Generated/TypeScript`. Start any chat server, then the gateway, then open the printed URL:
+`chat_server` prints its port; `gateway.ts <port>` prints the http port; set `DUPLEX_WASM` to the
+`.wasm` if it is not under `Build/Wasm`.
 
 ```python
 import duplex, duplex_registry as reg
@@ -277,6 +285,7 @@ are short shell scripts.
 | Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
 | Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
 | Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks |
+| Wasm | the WebAssembly codec passes the same reference vectors as C; the web chat runs end to end (gateway, WebSocket client code, C server) and the page and every module it imports are fetched like a browser would |
 | Examples | the chat server and client of each language run as separate processes |
 | CrossLanguage | one test per (client language, server language) pair, same scenario and checks |
 | Performance | `ctest -L Performance` (release): codec, CRC and loopback round-trip benchmarks compared with the machine's baseline; per-binding cost reports |
@@ -301,6 +310,6 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-an IOCP backend for Windows · a WASM build of the codec · long fuzzing runs.
+an IOCP backend for Windows · long fuzzing runs.
 
 License: MIT.

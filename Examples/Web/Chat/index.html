@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duplex chat</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #8884; border-radius: 6px; height: 18rem; overflow-y: auto; padding: .5rem; margin: 1rem 0; }
+    #log p { margin: .15rem 0; }
+    form { display: flex; gap: .5rem; }
+    form[hidden] { display: none; }
+    input { flex: 1; padding: .4rem; }
+    #status { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Duplex chat</h1>
+  <p id="status">connecting…</p>
+  <div id="log" aria-live="polite"></div>
+  <form id="login"><input id="nick" placeholder="nickname" autofocus><button>Join</button></form>
+  <form id="send" hidden><input id="text" placeholder="message" autocomplete="off"><button>Send</button></form>
+  <script type="module" src="/Examples/Web/Chat/chat.ts"></script>
+</body>
+</html>

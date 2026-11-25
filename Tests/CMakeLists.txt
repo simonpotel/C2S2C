@@ -252,6 +252,29 @@ if(DX_NODE_BIN AND NOT DX_SANITIZE)
     endif()
 endif()
 
+# WebAssembly codec: built with clang's wasm32 target and wasm-ld (no Emscripten needed), tested
+# with the shared vectors, and the web chat run end to end (gateway + WebSocket client code).
+find_program(DX_WASM_CLANG clang PATHS /opt/homebrew/opt/llvm/bin /usr/lib/llvm-18/bin /usr/lib/llvm-17/bin /usr/local/opt/llvm/bin NO_DEFAULT_PATH)
+find_program(DX_WASM_LD wasm-ld PATHS /opt/homebrew/bin /opt/homebrew/opt/llvm/bin /usr/lib/llvm-18/bin /usr/lib/llvm-17/bin /usr/local/bin)
+if(DX_WASM_CLANG AND DX_WASM_LD AND TEST test_node)
+    set(DX_WASM_FILE ${CMAKE_BINARY_DIR}/Wasm/duplex_codec.wasm)
+    file(GLOB DX_WASM_SOURCES ${CMAKE_SOURCE_DIR}/Bindings/Wasm/Source/*.c ${CMAKE_SOURCE_DIR}/Source/*/*.c)
+    add_custom_command(OUTPUT ${DX_WASM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E env DX_WASM_CLANG=${DX_WASM_CLANG} DX_WASM_LD=${DX_WASM_LD}
+                sh ${CMAKE_SOURCE_DIR}/Bindings/Wasm/build.sh ${DX_WASM_FILE}
+        DEPENDS ${CMAKE_SOURCE_DIR}/Bindings/Wasm/build.sh ${DX_WASM_SOURCES} ${CMAKE_SOURCE_DIR}/Generated/C/dx_registry.c
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} COMMENT "Building the WebAssembly codec")
+    add_custom_target(wasm ALL DEPENDS ${DX_WASM_FILE})
+    set(DX_WASM_ENV DUPLEX_WASM=${DX_WASM_FILE})
+    add_test(NAME test_wasm COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings --test
+             ${CMAKE_CURRENT_SOURCE_DIR}/Wasm/test_wasm.ts)
+    set_tests_properties(test_wasm PROPERTIES LABELS Wasm TIMEOUT 120 ENVIRONMENT "${DX_WASM_ENV}")
+    add_test(NAME test_web COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings --test
+             ${CMAKE_CURRENT_SOURCE_DIR}/Wasm/test_web.ts)
+    set_tests_properties(test_web PROPERTIES LABELS Wasm TIMEOUT 120
+                         ENVIRONMENT "${DX_WASM_ENV};DX_CHAT_SERVER=$<TARGET_FILE:chat_server>")
+endif()
+
 # Cross-language matrix: every client implementation against every server implementation, same
 # scenario (Tests/Examples/chat_example.sh) and same checks. One ctest entry per pair, named
 # cross_<client>_to_<server>. Environment variables of every binding are set for all of them.

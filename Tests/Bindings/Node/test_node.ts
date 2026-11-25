@@ -4,6 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Context, DuplexError, decode, encode } from "../../../Bindings/Node/Source/index.ts";
+import { ERROR_MESSAGES } from "../../../Bindings/Node/Source/codec.ts";
+import { createRequire } from "node:module";
 import * as reg from "../../../Generated/TypeScript/registry.ts";
 
 /** Runs both contexts until done() or 10 s (no fixed sleeps). */
@@ -120,4 +122,12 @@ test("disconnect reason reaches the hook", () => {
   client.close(conn);
   assert.ok(spin(server, client, () => reasons.length === 1));
   assert.deepEqual(reasons, [0]);
+});
+
+test("the error messages of the pure codec match the C library", () => {
+  // codec.ts repeats the messages so browsers can use it; this test catches any drift.
+  const native = createRequire(import.meta.url)(process.env.DUPLEX_ADDON as string);
+  for (const code of Object.keys(ERROR_MESSAGES).map(Number)) {
+    assert.equal(ERROR_MESSAGES[code], native.strerror(code), `code ${code}`);
+  }
 });
