@@ -1,0 +1,3 @@
+# Build output goes to the repository's Build/ folder, like every other build.
+[build]
+target-dir = "../../Build/Rust"

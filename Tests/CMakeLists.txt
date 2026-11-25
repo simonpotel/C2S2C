@@ -167,8 +167,9 @@ endif()
 
 # Python binding: a copy of the package in the layout `pip install` would give, so tests and
 # examples import it exactly like a user would (PYTHONPATH + DUPLEX_LIBRARY).
+# (Not under sanitizers: an instrumented libduplex cannot be loaded by uninstrumented programs.)
 find_program(DX_PYTHON_ANY NAMES python3)
-if(DX_PYTHON_ANY)
+if(DX_PYTHON_ANY AND NOT DX_SANITIZE)
     set(DX_PYPKG ${CMAKE_BINARY_DIR}/PythonPackage)
     file(GLOB DX_PY_SOURCES ${CMAKE_SOURCE_DIR}/Bindings/Python/Source/*.py)
     foreach(f ${DX_PY_SOURCES})
@@ -187,6 +188,25 @@ if(DX_PYTHON_ANY)
     set_tests_properties(example_chat_python PROPERTIES LABELS Examples TIMEOUT 60 ENVIRONMENT "${DX_PY_ENV}")
     set_property(GLOBAL APPEND PROPERTY DX_IMPLS
         "Python|${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Server/chat_server.py|${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Examples/Python/Client/chat_client.py")
+endif()
+
+# Rust binding: cargo builds the workspace against this build's libduplex, then cargo runs the
+# binding's tests and the two chat examples join the cross-language matrix.
+find_program(DX_CARGO cargo)
+if(DX_CARGO AND NOT DX_SANITIZE)
+    set(DX_RUST_DIR ${CMAKE_SOURCE_DIR}/Bindings/Rust)
+    set(DX_RUST_ENV DUPLEX_LIB_DIR=$<TARGET_FILE_DIR:duplex>)
+    add_custom_target(rust_build ALL
+        COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} build --offline --quiet
+        WORKING_DIRECTORY ${DX_RUST_DIR} DEPENDS duplex COMMENT "Building the Rust binding")
+    add_test(NAME test_rust COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} test --offline --quiet
+             WORKING_DIRECTORY ${DX_RUST_DIR})
+    set_tests_properties(test_rust PROPERTIES LABELS Bindings TIMEOUT 300)
+    set(DX_RUST_BIN ${CMAKE_SOURCE_DIR}/Build/Rust/debug)
+    add_test(NAME example_chat_rust COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
+             ${DX_RUST_BIN}/chat_server_rust ${DX_RUST_BIN}/chat_client_rust)
+    set_tests_properties(example_chat_rust PROPERTIES LABELS Examples TIMEOUT 60)
+    set_property(GLOBAL APPEND PROPERTY DX_IMPLS "Rust|${DX_RUST_BIN}/chat_server_rust|${DX_RUST_BIN}/chat_client_rust")
 endif()
 
 # Cross-language matrix: every client implementation against every server implementation, same

@@ -8,7 +8,7 @@ Typical use: a real-time game or chat backend made of services in several langua
 
 **Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
 with code generation, TCP client/server runtime (batched, no allocation after start), handlers,
-hooks and tunnels exist too. Bindings: C++ and Python done; Rust, Node/TypeScript and WASM are planned (bottom of this page).
+hooks and tunnels exist too. Bindings: C++, Python and Rust done; Node/TypeScript and WASM are planned (bottom of this page).
 
 ## Quick start
 
@@ -183,6 +183,7 @@ the same chat example (`Examples/<Lang>/Server|Client`, same command line, same 
 | C | `Include/Duplex/duplex.h` + `Generated/C/dx_packets.h` | link `libduplex` |
 | C++17 | `Bindings/Cpp/duplex.hpp` (header only) | `duplex::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `duplex::Error`, handlers/hooks are lambdas; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
 | Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (packet data is a zero-copy view that raises after release), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
+| Rust | `Bindings/Rust` (crates `duplex-sys` = raw FFI, `duplex` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, duplex::Error>`; handlers/hooks are closures. Build with `DUPLEX_LIB_DIR=<folder of libduplex> cargo build` from `Bindings/Rust` |
 
 ```python
 import duplex, duplex_registry as reg
@@ -268,7 +269,7 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-io_uring and IOCP backends · bindings for Rust, Node/TypeScript, WASM · measured
+io_uring and IOCP backends · bindings for Node/TypeScript, WASM · measured
 optimisations and long fuzzing runs.
 
 License: MIT.

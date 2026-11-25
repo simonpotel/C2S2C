@@ -1,0 +1,25 @@
+[package]
+name = "duplex"
+version = "0.1.0"
+edition = "2021"
+description = "Safe Rust binding of the Duplex packet library"
+license = "MIT"
+build = "build.rs"
+
+[lib]
+path = "Source/lib.rs"
+
+[dependencies]
+duplex-sys = { path = "../DuplexSys" }
+
+[[bin]]
+name = "chat_server_rust"
+path = "../../../Examples/Rust/Server/chat_server.rs"
+
+[[bin]]
+name = "chat_client_rust"
+path = "../../../Examples/Rust/Client/chat_client.rs"
+
+[[test]]
+name = "bindings"
+path = "../../../Tests/Bindings/Rust/test_rust.rs"

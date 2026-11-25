@@ -1,0 +1,3 @@
+[workspace]
+members = ["DuplexSys", "Duplex"]
+resolver = "2"

@@ -1,0 +1,11 @@
+[package]
+name = "duplex-sys"
+version = "0.1.0"
+edition = "2021"
+description = "Raw FFI declarations of the Duplex C API"
+license = "MIT"
+build = "build.rs"
+links = "duplex"
+
+[lib]
+path = "Source/lib.rs"

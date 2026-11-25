@@ -8,7 +8,7 @@ presets=${*:-debug asan tsan}
 # The toolchain image is built once and cached by Docker, so later runs start immediately.
 docker build -q -t duplex-linux-check - <<'DOCKERFILE' >/dev/null || exit 1
 FROM ubuntu:24.04
-RUN apt-get update -qq && apt-get install -y -qq build-essential cmake ninja-build python3 rustc \
+RUN apt-get update -qq && apt-get install -y -qq build-essential cmake ninja-build python3 rustc cargo \
     && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
 
