@@ -11,9 +11,10 @@ files=$(git ls-files --cached --others --exclude-standard | grep -v '^Build/')
 bad_dirs=$(echo "$files" | grep -v '^\.' | sed -n 's|/[^/]*$||p' | tr '/' '\n' | sort -u |
     grep -vE '^[A-Z][A-Za-z0-9]*$')
 
-# 2. Files: snake_case, or an upper-case root file (README.md, LICENSE...), or a CMake-imposed name.
+# 2. Files: snake_case (a leading underscore is allowed: Python imposes __init__.py), or an
+#    upper-case root file (README.md, LICENSE...), or a CMake-imposed name.
 bad_files=$(echo "$files" | sed 's|.*/||' |
-    grep -vE '^(\.?[a-z0-9][a-z0-9_.-]*|[A-Z][A-Z0-9_]*(\.md)?|CMakeLists\.txt|CMakePresets\.json)$')
+    grep -vE '^(\.?_*[a-z0-9][a-z0-9_.-]*|[A-Z][A-Z0-9_]*(\.md)?|CMakeLists\.txt|CMakePresets\.json)$')
 
 # 3. Case-only collisions: lower-case every path and look for duplicates.
 clashes=$(echo "$files" | tr 'A-Z' 'a-z' | sort | uniq -d)
