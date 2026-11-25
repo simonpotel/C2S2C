@@ -1,0 +1,15 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ninja  # presets use the Ninja generator
+      # Full suite: naming, unit, vectors, ABI.
+      - run: cmake --preset debug && cmake --build --preset debug && ctest --preset debug
+      # Same unit tests under AddressSanitizer + UBSan to catch memory errors and UB.
+      - run: cmake --preset asan && cmake --build --preset asan && ctest --preset asan
