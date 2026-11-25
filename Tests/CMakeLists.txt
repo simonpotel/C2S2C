@@ -136,6 +136,7 @@ function(dx_net_test name dir label)
 endfunction()
 
 dx_net_test(test_integration Integration Integration)
+dx_net_test(test_api Integration Integration)
 dx_net_test(test_noalloc Memory Memory)
 
 # Windows validates the library, the C tests, integration and memory tests. Everything below needs

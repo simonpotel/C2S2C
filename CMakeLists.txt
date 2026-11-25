@@ -27,6 +27,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/CMake)
 include(compiler_warnings)
 include(sanitizers)
+include(coverage)
 
 # One source list feeds both libraries so they can never diverge.
 set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
