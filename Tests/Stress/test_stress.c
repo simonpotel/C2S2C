@@ -62,6 +62,7 @@ static dx_ctx* make(unsigned conns)
     cfg.rx_queue = 16384;
     cfg.tx_bytes = 4096;
     cfg.idle_timeout_ms = 3600000;
+    cfg.backend = test_backend();
     return dx_create(&cfg);
 }
 

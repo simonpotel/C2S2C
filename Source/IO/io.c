@@ -20,6 +20,8 @@ const dx_io_ops* dx_io_get(uint32_t backend)
 #if defined(__linux__)
     case DX_BACKEND_EPOLL:
         return &dx_io_epoll;
+    case DX_BACKEND_URING:
+        return &dx_io_uring; /* may still fail at dx_create if the kernel refuses io_uring */
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
     case DX_BACKEND_KQUEUE:

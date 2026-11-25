@@ -171,6 +171,7 @@ hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + 
 | `DX_BACKEND_POLL` | Unix | portable, scans every socket: fine for hundreds of connections |
 | `DX_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
 | `DX_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
+| `DX_BACKEND_URING` | Linux ≥ 5.11 | io_uring: readiness requests and answers travel through shared queues (fewer system calls); `dx_create` returns NULL if the kernel or sandbox refuses it |
 
 ## Using it from other languages
 
@@ -262,7 +263,8 @@ cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fu
 
 Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
 so run `Tools/Scripts/linux_check.sh` (Docker, Ubuntu) to run debug, asan and tsan on Linux, which
-also exercises the epoll backend. Coverage of `Source/`: 100 % lines, about 98 % branches.
+also exercises the epoll backend, and replays the runtime tests on poll and io_uring. Any runtime
+test can be pointed at a backend with `DX_TEST_BACKEND=<n>` (1 poll, 2 epoll, 3 kqueue, 4 io_uring). Coverage of `Source/`: 100 % lines, about 98 % branches.
 
 Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
 (payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
@@ -270,7 +272,7 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-io_uring and IOCP backends · a WASM build of the codec · measured
+an IOCP backend for Windows · a WASM build of the codec · measured
 optimisations and long fuzzing runs.
 
 License: MIT.

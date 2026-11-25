@@ -38,7 +38,7 @@ set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
 
 # Native I/O backends exist only on their own platform.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    list(APPEND DX_SOURCES Source/IO/io_epoll.c)
+    list(APPEND DX_SOURCES Source/IO/io_epoll.c Source/IO/io_uring.c)
 elseif(APPLE OR CMAKE_SYSTEM_NAME MATCHES "BSD")
     list(APPEND DX_SOURCES Source/IO/io_kqueue.c)
 endif()

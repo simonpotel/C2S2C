@@ -141,6 +141,16 @@ int main(void)
 {
     run_backend(DX_BACKEND_POLL);
     if (dx_io_get(DX_BACKEND_AUTO) != &dx_io_poll) run_backend(DX_BACKEND_AUTO); /* native one */
+#if defined(__linux__)
+    /* io_uring may be refused by the kernel or the sandbox: then it is skipped, not failed. */
+    dx_ctx* probe = make_ctx(DX_BACKEND_URING);
+    if (probe) {
+        dx_destroy(probe);
+        run_backend(DX_BACKEND_URING);
+    } else {
+        printf("io_uring unavailable here: skipped\n");
+    }
+#endif
     test_connect_refused();
     return dx_test_done();
 }

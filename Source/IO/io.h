@@ -42,6 +42,7 @@ const dx_io_ops* dx_io_get(uint32_t backend);
 extern const dx_io_ops dx_io_poll;
 #if defined(__linux__)
 extern const dx_io_ops dx_io_epoll;
+extern const dx_io_ops dx_io_uring;
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 extern const dx_io_ops dx_io_kqueue;

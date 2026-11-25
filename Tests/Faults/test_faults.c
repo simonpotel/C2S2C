@@ -22,6 +22,7 @@ static dx_ctx* make_server(uint32_t idle_ms, uint32_t queue, uint32_t max_payloa
     dx_config cfg;
     dx_config_default(&cfg);
     cfg.max_conns = 4;
+    cfg.backend = test_backend();
     cfg.idle_timeout_ms = idle_ms;
     if (queue) cfg.rx_queue = queue;
     if (max_payload) cfg.max_payload = max_payload;

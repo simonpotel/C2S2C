@@ -3,6 +3,7 @@
 #ifndef DX_TEST_NET_H
 #define DX_TEST_NET_H
 
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -15,6 +16,14 @@
  * awaited condition is true (or after a generous deadline, which only matters when it fails).
  * Ports are never hard-coded: servers listen on port 0 and tests read the chosen port back.
  */
+
+/* Backend used by the runtime tests: DX_TEST_BACKEND=<n> (a DX_BACKEND_* value) overrides the
+ * default, so the same suite can be replayed on poll, epoll, kqueue or io_uring. */
+static inline uint32_t test_backend(void)
+{
+    const char* v = getenv("DX_TEST_BACKEND");
+    return v ? (uint32_t)atoi(v) : DX_BACKEND_AUTO;
+}
 
 static inline uint64_t test_now_ms(void)
 {

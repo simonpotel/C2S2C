@@ -20,6 +20,7 @@ static dx_ctx* make(void)
     dx_config cfg;
     dx_config_default(&cfg);
     cfg.max_conns = 8;
+    cfg.backend = test_backend();
     cfg.max_payload = 4096;
     cfg.rx_ring_bytes = 1u << 20;
     cfg.tx_bytes = 0;

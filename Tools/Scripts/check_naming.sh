@@ -15,7 +15,7 @@ bad_dirs=$(echo "$files" | grep -v '^\.' | sed -n 's|/[^/]*$||p' | tr '/' '\n' |
 # 2. Files: snake_case (a leading underscore is allowed: Python imposes __init__.py), or an
 #    upper-case root file (README.md, LICENSE...), or a name a tool imposes (CMake, Cargo).
 bad_files=$(echo "$files" | sed 's|.*/||' |
-    grep -vE '^(\.?_*[a-z0-9][a-z0-9_.-]*|[A-Z][A-Z0-9_]*(\.md)?|CMakeLists\.txt|CMakePresets\.json|Cargo\.(toml|lock))$')
+    grep -vE '^(\.?_*[a-z0-9][a-z0-9_.-]*|[A-Z][A-Z0-9_]*(\.md)?|CMakeLists\.txt|CMakePresets\.json|Cargo\.toml)$')
 
 # 3. Case-only collisions: lower-case every path and look for duplicates.
 clashes=$(echo "$files" | tr 'A-Z' 'a-z' | sort | uniq -d)

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs the whole test suite on Linux inside an Ubuntu container: this is how the epoll backend
 # and ThreadSanitizer (which cannot run on recent macOS) are checked from a Mac.
-# Needs Docker. Usage: linux_check.sh [preset...]   (default: debug asan tsan)
+# (seccomp is relaxed because Docker's default profile blocks io_uring.) Needs Docker. Usage: linux_check.sh [preset...]   (default: debug asan tsan)
 cd "$(dirname "$0")/../.." || exit 1
 presets=${*:-debug asan tsan}
 
@@ -13,7 +13,7 @@ RUN apt-get update -qq && apt-get install -y -qq build-essential cmake ninja-bui
 DOCKERFILE
 
 # The source is mounted read-only and copied, so Linux builds never touch the host's Build/.
-docker run --rm -v "$PWD":/src:ro duplex-linux-check sh -c '
+docker run --rm --security-opt seccomp=unconfined -v "$PWD":/src:ro duplex-linux-check sh -c '
     mkdir /work
     tar -C /src --exclude=Build --exclude=.git -cf - . | tar -C /work -xf -
     cd /work
@@ -22,5 +22,10 @@ docker run --rm -v "$PWD":/src:ro duplex-linux-check sh -c '
         cmake --preset $p >/dev/null
         cmake --build --preset $p 2>&1 | grep -E "error|warning" || true
         DX_STRESS_SECONDS=2 ctest --preset $p 2>&1 | grep -E "tests passed|Failed|Not Run"
+    done
+    # The runtime tests again on every other backend (1 = poll, 4 = io_uring; auto was epoll).
+    for b in 1 4; do
+        echo "=== debug, backend $b ==="
+        DX_TEST_BACKEND=$b DX_STRESS_SECONDS=2 ctest --preset debug -L "Faults|Integration|Stress" 2>&1 | grep -E "tests passed|Failed|Not Run"
     done
 '
