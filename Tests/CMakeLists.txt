@@ -15,6 +15,7 @@ dx_unit_test(test_header)
 dx_unit_test(test_payload)
 dx_unit_test(test_registry)
 dx_unit_test(test_memory)
+dx_unit_test(test_simd)
 
 # Reference vectors: one ctest entry per Vectors/*.bin, so a failure names the exact file.
 add_executable(test_vectors Vectors/test_vectors.c)
@@ -195,14 +196,21 @@ endif()
 find_program(DX_CARGO cargo)
 if(DX_CARGO AND NOT DX_SANITIZE)
     set(DX_RUST_DIR ${CMAKE_SOURCE_DIR}/Bindings/Rust)
+    # Release builds of the library get an optimized Rust binding too (benchmarks need it).
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(DX_CARGO_PROFILE --release)
+        set(DX_CARGO_DIR release)
+    else()
+        set(DX_CARGO_DIR debug)
+    endif()
     set(DX_RUST_ENV DUPLEX_LIB_DIR=$<TARGET_FILE_DIR:duplex>)
     add_custom_target(rust_build ALL
-        COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} build --offline --quiet
+        COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} build ${DX_CARGO_PROFILE} --offline --quiet
         WORKING_DIRECTORY ${DX_RUST_DIR} DEPENDS duplex COMMENT "Building the Rust binding")
-    add_test(NAME test_rust COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} test --offline --quiet
+    add_test(NAME test_rust COMMAND ${CMAKE_COMMAND} -E env ${DX_RUST_ENV} ${DX_CARGO} test ${DX_CARGO_PROFILE} --offline --quiet
              WORKING_DIRECTORY ${DX_RUST_DIR})
     set_tests_properties(test_rust PROPERTIES LABELS Bindings TIMEOUT 300)
-    set(DX_RUST_BIN ${CMAKE_SOURCE_DIR}/Build/Rust/debug)
+    set(DX_RUST_BIN ${CMAKE_SOURCE_DIR}/Build/Rust/${DX_CARGO_DIR})
     add_test(NAME example_chat_rust COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
              ${DX_RUST_BIN}/chat_server_rust ${DX_RUST_BIN}/chat_client_rust)
     set_tests_properties(example_chat_rust PROPERTIES LABELS Examples TIMEOUT 60)
@@ -263,3 +271,41 @@ foreach(server_impl ${DX_IMPLS})
                              LABELS CrossLanguage TIMEOUT 60 ENVIRONMENT "${DX_CROSS_ENV}")
     endforeach()
 endforeach()
+
+# Performance: the benchmark programs (see Tools/Scripts/bench_compare.sh) and the regression
+# check against Bench/Baselines. Run with `ctest -L Performance` on a quiet machine.
+add_executable(bench_codec ${CMAKE_SOURCE_DIR}/Bench/bench_codec.c)
+add_executable(bench_poll ${CMAKE_SOURCE_DIR}/Bench/bench_poll.c)
+foreach(b bench_codec bench_poll)
+    target_include_directories(${b} PRIVATE ${CMAKE_SOURCE_DIR}/Source ${CMAKE_SOURCE_DIR}/Source/Internal)
+    target_link_libraries(${b} PRIVATE duplex_static)
+    dx_enable_warnings(${b})
+endforeach()
+# The regression check only makes sense on an optimized build (baselines are Release numbers).
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_test(NAME performance COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/bench_compare.sh
+             $<TARGET_FILE:bench_codec> $<TARGET_FILE:bench_poll>)
+    set_tests_properties(performance PROPERTIES LABELS Performance TIMEOUT 300)
+endif()
+
+# Cost of each binding (round trips per second through the language's own API). These only
+# report; the C benchmarks above carry the baselines.
+if(CMAKE_CXX_COMPILER)
+    add_executable(bench_ffi_cpp ${CMAKE_SOURCE_DIR}/Bench/Ffi/bench_ffi.cpp)
+    target_include_directories(bench_ffi_cpp PRIVATE ${CMAKE_SOURCE_DIR}/Bindings/Cpp ${CMAKE_SOURCE_DIR}/Generated/Cpp)
+    target_link_libraries(bench_ffi_cpp PRIVATE duplex)
+    add_test(NAME ffi_cpp COMMAND bench_ffi_cpp)
+    set_tests_properties(ffi_cpp PROPERTIES LABELS Performance TIMEOUT 60)
+endif()
+if(DX_PYTHON_ANY AND NOT DX_SANITIZE)
+    add_test(NAME ffi_python COMMAND ${DX_PYTHON_ANY} ${CMAKE_SOURCE_DIR}/Bench/Ffi/bench_ffi.py)
+    set_tests_properties(ffi_python PROPERTIES LABELS Performance TIMEOUT 60 ENVIRONMENT "${DX_PY_ENV}")
+endif()
+if(DX_CARGO AND NOT DX_SANITIZE)
+    add_test(NAME ffi_rust COMMAND ${DX_RUST_BIN}/bench_ffi_rust)
+    set_tests_properties(ffi_rust PROPERTIES LABELS Performance TIMEOUT 60)
+endif()
+if(TEST test_node)
+    add_test(NAME ffi_node COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings ${CMAKE_SOURCE_DIR}/Bench/Ffi/bench_ffi.ts)
+    set_tests_properties(ffi_node PROPERTIES LABELS Performance TIMEOUT 60 ENVIRONMENT "${DX_NODE_ENV}")
+endif()

@@ -2,6 +2,7 @@ dx_abi_version
 dx_close
 dx_config_default
 dx_connect
+dx_crc32c
 dx_create
 dx_destroy
 dx_dispatch

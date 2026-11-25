@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Version of the C interface this binding was written for: (major, minor).
-EXPECTED_ABI = (1, 4)
+EXPECTED_ABI = (1, 4)  # minimum minor version: later minors only add functions
 
 
 def _candidates():

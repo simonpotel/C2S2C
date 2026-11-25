@@ -1,0 +1,8 @@
+crc32c_dispatch 8333 MB/s
+crc32c_portable 415 MB/s
+header_decode 489.2 Mops/s
+header_encode 571.4 Mops/s
+payload_validate 61.8 Mops/s
+pipelined_roundtrips 384385 packets/s
+roundtrip_p50 46.0 us
+roundtrip_p99 1310.0 us

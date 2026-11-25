@@ -33,6 +33,8 @@ set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Core/Ctx/context.c Source/Core/Ctx/queue.c Source/Core/Ctx/listener.c
     Source/Core/Ctx/poll.c Source/Core/Conn/lifecycle.c Source/Core/Conn/sending.c
     Source/Core/Conn/receiving.c Source/Core/Conn/events.c Source/Core/Conn/maintenance.c
+    Source/Simd/cpu_detect.c Source/Simd/crc32_generic.c Source/Simd/crc32_sse42.c
+    Source/Simd/crc32_armv8.c Source/Simd/crc32_none.c
     Source/Core/Hooks/hooks.c Source/Core/Hooks/dispatch.c Source/Core/Hooks/tunnel.c
     Generated/C/dx_registry.c)
 

@@ -194,6 +194,33 @@ ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, bytes(p.data)))
 while True: ctx.dispatch(200)
 ```
 
+## Checksum and performance
+
+`dx_crc32c(crc, data, len)` is a CRC-32C checksum for applications that want to verify data, for
+example the chunks of a file sent with `upload`. It starts from 0 and can continue over more data
+(`dx_crc32c(dx_crc32c(0, a, n), b, m)` equals the checksum of `a` then `b`). The CPU's CRC
+instructions are used when present (SSE4.2 on x86-64, ARMv8 CRC on arm64, detected at run time,
+code in `Source/Simd/`); otherwise portable C. The hardware code is tested against the portable
+code for every length and alignment.
+
+Measured on Apple silicon, release build, one thread, loopback (your numbers will differ; the
+regression check only compares a machine with its own baseline):
+
+| Measure | Result |
+|---|---|
+| header encode / decode | about 570 / 490 million per second |
+| payload validation (3 fields) | about 62 million per second |
+| CRC-32C, portable → hardware | 415 MB/s → 8300 MB/s (20×) |
+| round trip over loopback TCP | p50 13–46 µs, p99 70 µs–1.3 ms (varies run to run) |
+| pipelined round trips | about 384 000 per second |
+| cost through each binding (round trips/s, same scenario) | C++ 349k · Rust 348k · Node 166k · Python 111k |
+
+Run them: `ctest --preset release -L Performance` (needs `cmake --preset release` first). The
+`performance` test runs `Tools/Scripts/bench_compare.sh`, which takes the best of 5 runs and fails
+if a throughput is more than 5 % below `Bench/Baselines/<os>-<arch>.txt` (latencies only fail at
+2×: they are noisy). Record a baseline for a new machine with `bench_compare.sh --record <bench
+programs>`.
+
 ## API
 
 All functions are pure (no I/O, no allocation), so thread-safe; the caller owns all buffers.
@@ -212,6 +239,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `dx_poll` / `dx_release` | receive a batch of packets (zero-copy) / give their memory back |
 | `dx_send`, `dx_send_batch`, `dx_close` | send (validated, copied), send many, close gracefully |
 | `dx_on_packet`, `dx_set_hooks`, `dx_dispatch`, `dx_tunnel` | handlers, hooks, push-style loop, relays |
+| `dx_crc32c(crc, data, len)` | CRC-32C checksum, hardware accelerated when possible |
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
 
@@ -251,6 +279,7 @@ are short shell scripts.
 | Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks |
 | Examples | the chat server and client of each language run as separate processes |
 | CrossLanguage | one test per (client language, server language) pair, same scenario and checks |
+| Performance | `ctest -L Performance` (release): codec, CRC and loopback round-trip benchmarks compared with the machine's baseline; per-binding cost reports |
 | Fuzz | libFuzzer feeds random bytes to the decoders and to a live connection's framing under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |
 
@@ -272,7 +301,6 @@ Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeL
 
 ## Planned
 
-an IOCP backend for Windows · a WASM build of the codec · measured
-optimisations and long fuzzing runs.
+an IOCP backend for Windows · a WASM build of the codec · long fuzzing runs.
 
 License: MIT.

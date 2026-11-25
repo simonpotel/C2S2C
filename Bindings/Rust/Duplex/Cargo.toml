@@ -23,3 +23,7 @@ path = "../../../Examples/Rust/Client/chat_client.rs"
 [[test]]
 name = "bindings"
 path = "../../../Tests/Bindings/Rust/test_rust.rs"
+
+[[bin]]
+name = "bench_ffi_rust"
+path = "../../../Bench/Ffi/bench_ffi.rs"

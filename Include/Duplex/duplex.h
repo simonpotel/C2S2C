@@ -41,6 +41,16 @@ DX_API int dx_header_encode(const dx_header* h, uint8_t out[DX_HEADER_SIZE]);
  */
 DX_API int dx_header_decode(const uint8_t* in, size_t len, dx_header* out);
 
+/**
+ * CRC-32C (Castagnoli) checksum, for applications that want to verify data (for example a file
+ * sent in `upload` chunks). Pass 0 as @p crc for a new checksum, or the previous result to
+ * continue over more data: dx_crc32c(dx_crc32c(0, a, n), b, m) equals the checksum of a then b.
+ * dx_crc32c(0, "123456789", 9) is 0xE3069283. Uses the CPU's CRC instructions when it has them
+ * (chosen at run time), the portable code otherwise; both give identical results.
+ * Thread-safe, no allocation. @p data may be NULL only if @p len is 0.
+ */
+DX_API uint32_t dx_crc32c(uint32_t crc, const uint8_t* data, size_t len);
+
 /* Payload writing.
  * Pattern: init, call dx_w_* for each field, then check w.err once and use w.len as the size.
  * After the first error every later call does nothing, so there is no need to test each call.
