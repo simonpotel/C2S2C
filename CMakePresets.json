@@ -8,18 +8,23 @@
     { "name": "asan", "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "address;undefined" } },
     { "name": "tsan", "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "thread" } }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "thread" } },
+    { "name": "fuzz", "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "address;undefined",
+                          "DX_FUZZ": "ON", "CMAKE_C_FLAGS": "-fsanitize=fuzzer-no-link" } }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
-    { "name": "tsan", "configurePreset": "tsan" }
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "fuzz", "configurePreset": "fuzz" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
     { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
-    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } }
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } },
+    { "name": "fuzz", "configurePreset": "fuzz", "output": { "outputOnFailure": true } }
   ]
 }

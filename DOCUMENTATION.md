@@ -6,8 +6,8 @@ bytes. **CTOS** = client → server, **STOC** = server → client.
 
 Typical use: a real-time game or chat backend made of services in several languages.
 
-**Status:** only the packet *header* exists (encode, decode, validation). Payloads, sockets,
-bindings and callbacks are planned (bottom of this page).
+**Status:** packet header and payload codecs exist (encode, decode, strict validation). Registry,
+sockets, bindings and callbacks are planned (bottom of this page).
 
 ## Quick start
 
@@ -53,6 +53,41 @@ Network bytes are never trusted, so the **first** broken rule is reported, in th
 
 Also: `DX_ERR_INVALID_ARG` (NULL pointer), `DX_ERR_TRUNCATED` (fewer than 14 bytes: wait for more).
 
+## The payload
+
+After the header comes `length` bytes of payload: a plain sequence of fields, no padding,
+little-endian. Field types:
+
+| Type | On the wire |
+|---|---|
+| `u8 u16 u32 u64`, `i8 i16 i32 i64`, `f32 f64` | fixed size (floats = IEEE-754 bits) |
+| `bool` | 1 byte, must be 0 or 1 |
+| `string` | u16 byte count + UTF-8 (strictly validated: no overlong forms, no surrogates) |
+| `bytes` | u32 byte count + data |
+| `array<T>` | u16 element count + elements (`T` is any type except array) |
+
+A **schema** (`dx_schema`) is the ordered list of field types a packet must contain.
+`dx_payload_validate_schema` checks a payload against it: nothing missing, nothing left over.
+Extra errors: `DX_ERR_BAD_UTF8`, `DX_ERR_BAD_VALUE`, `DX_ERR_TRAILING`, `DX_ERR_BAD_SCHEMA`,
+`DX_ERR_OVERFLOW` (writer buffer full).
+
+Writing and reading use a cursor with a **sticky error**: call `dx_w_*` / `dx_r_*` for each field,
+check `err` once at the end.
+
+```c
+uint8_t buf[64];
+dx_writer w;
+dx_writer_init(&w, buf, sizeof buf);
+dx_w_u32(&w, 42);
+dx_w_string(&w, "hello", 5);
+if (w.err < 0) puts(dx_strerror(w.err));      /* else send buf[0..w.len) */
+
+dx_reader r;
+dx_reader_init(&r, buf, w.len);
+uint32_t id = dx_r_u32(&r);
+uint16_t n; const char* s = dx_r_string(&r, &n);   /* points into buf, not NUL-terminated */
+```
+
 ## API
 
 All functions are pure (no I/O, no allocation), so thread-safe; the caller owns all buffers.
@@ -61,6 +96,9 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 |---|---|
 | `dx_header_encode(h, out)` | validate `h`, write 14 bytes |
 | `dx_header_decode(in, len, out)` | read ≤ `len` bytes, validate; `out` untouched on error |
+| `dx_writer_init`, `dx_w_u8/u16/u32/u64/f32/f64/string/bytes` | append fields to your buffer |
+| `dx_reader_init`, `dx_r_u8/u16/u32/u64/f32/f64/string/bytes` | read fields, bounds-checked; strings/bytes point into the input |
+| `dx_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
 
@@ -76,29 +114,40 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 ## Layout
 
-`Include/Duplex/` public headers · `Source/Core/` header logic · `Source/Codec/` byte order ·
+`Include/Duplex/` public headers · `Source/Core/` header logic · `Source/Codec/` byte order, payload read/write, UTF-8 ·
 `CMake/` build modules · `Tests/` tests · `Tools/Scripts/` shell checks.
 
 ## Tests
 
-`ctest` runs four groups of checks and prints a pass/fail table (library tests are C; the two repository checks are short shell scripts):
+`ctest --preset debug` prints a pass/fail table. Library tests are C; the two repository checks
+are short shell scripts.
 
 | Check | What it proves |
 |---|---|
 | Naming | folders PascalCase, files snake_case, no case-only clashes (macOS/Windows are case-insensitive) |
-| Unit | exact bytes, round trip, limits (0/max/max+1), every error, NULL args, struct layout |
-| Vectors | reference `.bin`/`.json` pairs decode as expected (C test `Tests/Vectors/test_vectors.c`); reusable by every future binding |
+| Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
+| Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
+| Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
+| Fuzz | libFuzzer feeds random bytes to the decoders under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |
 
-Memory-error check: `CC=/opt/homebrew/opt/llvm/bin/clang cmake --preset asan && cmake --build --preset asan && ctest --preset asan`
-(`CC=…` only on macOS; Apple's clang hangs with ASan there, and ThreadSanitizer (`tsan`) crashes
-there too, so use Linux/CI for it). Coverage of `Source/`: 100 % lines and branches.
-Add a vector: drop `header_<name>.bin` + `.json` in `Tests/Vectors/`. Add a unit test:
-`Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
+Extra runs (macOS needs Homebrew LLVM: `export CC=/opt/homebrew/opt/llvm/bin/clang`):
+
+```bash
+cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # memory errors, UB
+cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fuzz, 10 s per target
+```
+
+Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
+so run `tsan` on Linux (docker or CI). Coverage of `Source/`: 100 % lines, about 98 % branches.
+
+Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
+(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`).
+Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
 
 ## Planned
 
-Payload fields (ints, floats, strings, bytes, arrays) · one packet registry generating code for
+One packet registry generating code for
 every language · sockets and event loop (epoll, io_uring, kqueue, IOCP) · **handlers and hooks**
 (per-packet callbacks, connect/disconnect/before-send/after-receive/error hooks, a tunnel that
 relays and filters packets between connections; callbacks run on the owner thread and received

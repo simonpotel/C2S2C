@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../check.h"
 #include "Duplex/duplex.h"
 
 /* Compile-time freeze of the public struct layout: if someone reorders or retypes a field,
@@ -12,20 +13,6 @@ _Static_assert(sizeof(dx_header) == 16, "dx_header layout is part of the ABI");
 _Static_assert(offsetof(dx_header, packet_id) == 4, "dx_header.packet_id offset");
 _Static_assert(offsetof(dx_header, length) == 8, "dx_header.length offset");
 _Static_assert(offsetof(dx_header, sequence) == 12, "dx_header.sequence offset");
-
-/* Minimal harness: no framework dependency. CHECK counts every assertion and keeps going,
- * so one run lists all failures. The last line ("N passed, M failed") is parsed by
- * run_all_tests.py. */
-static int g_pass, g_fail;
-#define CHECK(c)                                                                                   \
-    do {                                                                                           \
-        if (c)                                                                                     \
-            g_pass++;                                                                              \
-        else {                                                                                     \
-            g_fail++;                                                                              \
-            printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c);                                     \
-        }                                                                                          \
-    } while (0)
 
 /* A valid CTOS header; each test copies it and breaks exactly one field. */
 static dx_header good(void)
@@ -101,7 +88,7 @@ static void test_errors(void)
 static void test_misc(void)
 {
     CHECK(dx_abi_version() == DX_ABI_VERSION);
-    for (int e = 0; e >= DX_ERR_TOO_LARGE; e--)
+    for (int e = 0; e >= DX_ERR_OVERFLOW; e--)
         CHECK(strcmp(dx_strerror(e), "unknown error") != 0);
     CHECK(strcmp(dx_strerror(-999), "unknown error") == 0);
 }
@@ -112,6 +99,5 @@ int main(void)
     test_bounds();
     test_errors();
     test_misc();
-    printf("%d passed, %d failed\n", g_pass, g_fail);
-    return g_fail != 0;
+    return dx_test_done();
 }

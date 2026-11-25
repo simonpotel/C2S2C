@@ -27,6 +27,16 @@ const char* dx_strerror(int err)
         return "packet id does not match direction";
     case DX_ERR_TOO_LARGE:
         return "payload too large";
+    case DX_ERR_BAD_UTF8:
+        return "invalid UTF-8";
+    case DX_ERR_BAD_VALUE:
+        return "invalid value for type";
+    case DX_ERR_TRAILING:
+        return "unexpected trailing bytes";
+    case DX_ERR_BAD_SCHEMA:
+        return "invalid schema";
+    case DX_ERR_OVERFLOW:
+        return "output buffer too small";
     default:
         return "unknown error"; /* never NULL, so callers can print it without checking */
     }

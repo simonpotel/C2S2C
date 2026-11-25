@@ -35,4 +35,53 @@ typedef struct dx_header {
     uint32_t sequence;
 } dx_header;
 
+/* Payload format.
+ * A payload is a plain sequence of fields, no padding, little-endian:
+ *   integers/floats: fixed size      bool: 1 byte (0 or 1)
+ *   string: u16 byte count + UTF-8   bytes: u32 byte count + data
+ *   array<T>: u16 element count + elements (T = any type except array)
+ * A schema is the ordered list of field types a packet must contain. */
+#define DX_T_U8 1
+#define DX_T_U16 2
+#define DX_T_U32 3
+#define DX_T_U64 4
+#define DX_T_I8 5
+#define DX_T_I16 6
+#define DX_T_I32 7
+#define DX_T_I64 8
+#define DX_T_F32 9
+#define DX_T_F64 10
+#define DX_T_BOOL 11
+#define DX_T_STRING 12
+#define DX_T_BYTES 13
+#define DX_T_ARRAY 14
+
+/** One field of a schema; `elem` is the element type when `type` is DX_T_ARRAY, else 0. */
+typedef struct dx_field {
+    uint8_t type;
+    uint8_t elem;
+} dx_field;
+
+/** Ordered field list describing one packet payload. */
+typedef struct dx_schema {
+    uint16_t count;
+    const dx_field* fields;
+} dx_schema;
+
+/** Cursor that appends fields to a caller-owned buffer. The first error sticks in `err`. */
+typedef struct dx_writer {
+    uint8_t* data;
+    uint32_t cap;
+    uint32_t len;
+    int err;
+} dx_writer;
+
+/** Cursor that reads fields from a caller-owned buffer. The first error sticks in `err`. */
+typedef struct dx_reader {
+    const uint8_t* data;
+    uint32_t len;
+    uint32_t pos;
+    int err;
+} dx_reader;
+
 #endif

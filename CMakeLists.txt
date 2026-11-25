@@ -12,7 +12,8 @@ include(compiler_warnings)
 include(sanitizers)
 
 # One source list feeds both libraries so they can never diverge.
-set(DX_SOURCES Source/Core/ctx.c Source/Core/header.c)
+set(DX_SOURCES Source/Core/ctx.c Source/Core/header.c Source/Codec/encode.c
+    Source/Codec/decode.c Source/Codec/utf8.c)
 
 # Shared lib: what the bindings load (dx_export.h switches on dllexport on Windows).
 add_library(duplex SHARED ${DX_SOURCES})
