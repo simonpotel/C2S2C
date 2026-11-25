@@ -13,7 +13,8 @@ include(sanitizers)
 
 # One source list feeds both libraries so they can never diverge.
 set(DX_SOURCES Source/Core/ctx.c Source/Core/header.c Source/Codec/encode.c
-    Source/Codec/decode.c Source/Codec/utf8.c)
+    Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c
+    Generated/dx_registry.c)
 
 # Shared lib: what the bindings load (dx_export.h switches on dllexport on Windows).
 add_library(duplex SHARED ${DX_SOURCES})
@@ -23,7 +24,8 @@ add_library(duplex_static STATIC ${DX_SOURCES})
 set_target_properties(duplex_static PROPERTIES OUTPUT_NAME duplex_static)
 # Same strict warnings (-Werror) on both so a warning cannot hide in one variant.
 foreach(t duplex duplex_static)
-    target_include_directories(${t} PUBLIC Include)
+    # Generated/ holds dx_packets.h (packet ids), which users include too.
+    target_include_directories(${t} PUBLIC Include Generated)
     dx_enable_warnings(${t})
 endforeach()
 

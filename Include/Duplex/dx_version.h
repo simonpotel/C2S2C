@@ -7,7 +7,7 @@
  * check it at load time); the protocol version changes when the bytes on the wire change. */
 
 /** ABI version: (major << 16) | (minor << 8) | patch. Bump on any public layout change. */
-#define DX_ABI_VERSION 0x00010100u
+#define DX_ABI_VERSION 0x00010200u
 #define DX_PROTOCOL_VERSION 1
 
 #endif

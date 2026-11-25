@@ -1,6 +1,8 @@
 dx_abi_version
 dx_header_decode
 dx_header_encode
+dx_packet_name
+dx_payload_validate
 dx_payload_validate_schema
 dx_r_bytes
 dx_r_f32

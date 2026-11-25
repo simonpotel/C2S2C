@@ -6,8 +6,8 @@ bytes. **CTOS** = client → server, **STOC** = server → client.
 
 Typical use: a real-time game or chat backend made of services in several languages.
 
-**Status:** packet header and payload codecs exist (encode, decode, strict validation). Registry,
-sockets, bindings and callbacks are planned (bottom of this page).
+**Status:** packet header and payload codecs exist (encode, decode, strict validation). Packet registry
+with code generation exists too. Sockets, bindings and callbacks are planned (bottom of this page).
 
 ## Quick start
 
@@ -88,6 +88,26 @@ uint32_t id = dx_r_u32(&r);
 uint16_t n; const char* s = dx_r_string(&r, &n);   /* points into buf, not NUL-terminated */
 ```
 
+## The packet registry
+
+`Registry/protocol.toml` is the **only** place packets are defined (name, id, fields). The script
+`Tools/Codegen/gen_registry.py` (Python 3.11+, no dependency) turns it into ready-made tables
+for every language in `Generated/`: C (`dx_packets.h`, `dx_registry.c`), C++, Python, Rust,
+TypeScript. Never edit `Generated/` by hand; edit the TOML, then run the script.
+
+```toml
+[[packet]]
+name = "chat_message"            # server -> client because bit 15 of the id is set
+id = 0x8002
+fields = ["user_id:u32", "text:string", "timestamp:u64"]
+```
+
+Rules, enforced by the generator: ids are unique; bit 15 = 1 means server → client; ids
+`0x7F00-0x7FFF` and `0xFF00-0xFFFF` are reserved for the library; an id is **never reused**
+(`Registry/ids.lock` remembers every id ever used, deleting or renaming one is refused: mark it
+`deprecated = true` instead). In C, `DX_PKT_CHAT_MESSAGE` is the id and
+`dx_payload_validate(id, bytes, len)` checks a payload against its layout.
+
 ## API
 
 All functions are pure (no I/O, no allocation), so thread-safe; the caller owns all buffers.
@@ -99,6 +119,8 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `dx_writer_init`, `dx_w_u8/u16/u32/u64/f32/f64/string/bytes` | append fields to your buffer |
 | `dx_reader_init`, `dx_r_u8/u16/u32/u64/f32/f64/string/bytes` | read fields, bounds-checked; strings/bytes point into the input |
 | `dx_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
+| `dx_payload_validate(id, in, len)` | same, using the registry layout of packet `id`; `DX_ERR_UNKNOWN_ID` if not registered |
+| `dx_packet_name(id)` | registered name (for logs), or NULL |
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
 
@@ -114,7 +136,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 ## Layout
 
-`Include/Duplex/` public headers · `Source/Core/` header logic · `Source/Codec/` byte order, payload read/write, UTF-8 ·
+`Include/Duplex/` public headers · `Source/Core/` header logic · `Registry/` + `Generated/` packet definitions and generated tables · `Tools/Codegen/` generator · `Source/Codec/` byte order, payload read/write, UTF-8 ·
 `CMake/` build modules · `Tests/` tests · `Tools/Scripts/` shell checks.
 
 ## Tests
@@ -128,6 +150,7 @@ are short shell scripts.
 | Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
 | Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
 | Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
+| Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
 | Fuzz | libFuzzer feeds random bytes to the decoders under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |
 
@@ -142,13 +165,12 @@ Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) 
 so run `tsan` on Linux (docker or CI). Coverage of `Source/`: 100 % lines, about 98 % branches.
 
 Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
-(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`).
+(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
 Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
 
 ## Planned
 
-One packet registry generating code for
-every language · sockets and event loop (epoll, io_uring, kqueue, IOCP) · **handlers and hooks**
+Sockets and event loop (epoll, io_uring, kqueue, IOCP) · **handlers and hooks**
 (per-packet callbacks, connect/disconnect/before-send/after-receive/error hooks, a tunnel that
 relays and filters packets between connections; callbacks run on the owner thread and received
 pointers are valid only during the call) · bindings for C++, Python, Rust, Node, WASM ·

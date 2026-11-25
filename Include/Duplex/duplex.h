@@ -87,6 +87,17 @@ DX_API const uint8_t* dx_r_bytes(dx_reader* r, uint32_t* len);
  */
 DX_API int dx_payload_validate_schema(const dx_schema* schema, const uint8_t* in, uint32_t len);
 
+/**
+ * Validates @p in as the payload of packet @p packet_id, using the layout generated from
+ * Registry/protocol.toml (see dx_payload_validate_schema for what "valid" means).
+ * @return DX_OK, DX_ERR_UNKNOWN_ID if the id is not in the registry, or any error of
+ * dx_payload_validate_schema. Thread-safe, no allocation.
+ */
+DX_API int dx_payload_validate(uint16_t packet_id, const uint8_t* in, uint32_t len);
+
+/** Name of a registered packet (e.g. "chat_message"), or NULL if unknown. Static string. */
+DX_API const char* dx_packet_name(uint16_t packet_id);
+
 #ifdef __cplusplus
 }
 #endif

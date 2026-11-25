@@ -18,5 +18,6 @@
 #define DX_ERR_TRAILING (-10)   /* bytes left over after the last field */
 #define DX_ERR_BAD_SCHEMA (-11) /* the field description itself is invalid */
 #define DX_ERR_OVERFLOW (-12)   /* writer buffer too small */
+#define DX_ERR_UNKNOWN_ID (-13) /* packet id not in the registry */
 
 #endif

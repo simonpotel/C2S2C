@@ -37,6 +37,8 @@ const char* dx_strerror(int err)
         return "invalid schema";
     case DX_ERR_OVERFLOW:
         return "output buffer too small";
+    case DX_ERR_UNKNOWN_ID:
+        return "unknown packet id";
     default:
         return "unknown error"; /* never NULL, so callers can print it without checking */
     }

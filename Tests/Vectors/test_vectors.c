@@ -11,6 +11,7 @@
  * pairs are meant to be reused by every language binding, so they all prove they agree with C.
  *   header_*.json : {"error": "DX_ERR_..."}  or  {"header": {"magic": ..., ...}}
  *   payload_*.json: {"schema": "u8,string,array<u16>", "error": "DX_OK" or "DX_ERR_..."}
+ *   packet_*.json : {"packet_id": 32770, "error": "DX_OK" or "DX_ERR_..."}  (registry layout)
  * Usage: test_vectors <path without extension>   (one ctest entry per vector, see CMake)
  */
 
@@ -28,7 +29,8 @@ static const struct {
               ERR(DX_ERR_TOO_LARGE),
               ERR(DX_ERR_BAD_UTF8),
               ERR(DX_ERR_BAD_VALUE),
-              ERR(DX_ERR_TRAILING)};
+              ERR(DX_ERR_TRAILING),
+              ERR(DX_ERR_UNKNOWN_ID)};
 
 /* Type names used in "schema", mapped to DX_T_* codes. */
 static const struct {
@@ -106,17 +108,23 @@ static int check_header(const unsigned char* bin, long len, const char* json)
            h.length == json_number(json, "length") && h.sequence == json_number(json, "sequence");
 }
 
-/* Payload vector: validate against the json schema and compare the error code. */
+/* Payload vector: validate against the json schema (or, for a packet vector, the registry
+ * layout of "packet_id") and compare the error code. */
 static int check_payload(const unsigned char* bin, long len, const char* json)
 {
     dx_field fields[8];
     const char* schema = strstr(json, "\"schema\": \"");
     const char* err = strstr(json, "\"error\": \"");
-    if (!schema || !err) return 0;
-    int n = parse_schema(schema + 11, fields, 8);
-    if (n < 0) return 0;
-    dx_schema s = {(uint16_t)n, fields};
-    int rc = dx_payload_validate_schema(&s, bin, (uint32_t)len);
+    int rc;
+    if (!err) return 0;
+    if (schema) {
+        int n = parse_schema(schema + 11, fields, 8);
+        if (n < 0) return 0;
+        dx_schema s = {(uint16_t)n, fields};
+        rc = dx_payload_validate_schema(&s, bin, (uint32_t)len);
+    } else {
+        rc = dx_payload_validate((uint16_t)json_number(json, "packet_id"), bin, (uint32_t)len);
+    }
     for (size_t i = 0; i < sizeof errors / sizeof errors[0]; i++)
         if (strncmp(err + 10, errors[i].name, strlen(errors[i].name)) == 0 &&
             err[10 + strlen(errors[i].name)] == '"')
@@ -139,9 +147,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    /* A "schema" key means payload vector, otherwise header vector. */
-    int ok = strstr((const char*)json, "\"schema\"") ? check_payload(bin, len, (const char*)json)
-                                                     : check_header(bin, len, (const char*)json);
+    /* A header vector has a "header" object or only an error; the others are payload vectors. */
+    const char* j = (const char*)json;
+    int is_payload =
+        strstr(j, "\"schema\"") || (strstr(j, "\"packet_id\"") && !strstr(j, "\"header\""));
+    int ok = is_payload ? check_payload(bin, len, j) : check_header(bin, len, j);
     if (!ok) puts("FAIL: result differs from the vector");
     return ok ? 0 : 1;
 }

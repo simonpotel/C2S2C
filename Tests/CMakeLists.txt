@@ -13,6 +13,7 @@ endfunction()
 
 dx_unit_test(test_header)
 dx_unit_test(test_payload)
+dx_unit_test(test_registry)
 
 # Reference vectors: one ctest entry per Vectors/*.bin, so a failure names the exact file.
 add_executable(test_vectors Vectors/test_vectors.c)
@@ -53,4 +54,14 @@ if(DX_FUZZ)
                      ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus ${CMAKE_CURRENT_SOURCE_DIR}/Fuzz/Corpus)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fuzz_corpus)
     set_tests_properties(fuzz_payload PROPERTIES LABELS Fuzz)
+endif()
+
+# Generated/ must match Registry/protocol.toml. Needs Python 3.11+ (tomllib); skipped if absent.
+find_program(DX_PYTHON NAMES python3.14 python3.13 python3.12 python3.11)
+if(DX_PYTHON)
+    add_test(NAME registry_up_to_date
+             COMMAND ${DX_PYTHON} ${CMAKE_SOURCE_DIR}/Tools/Codegen/gen_registry.py --check)
+    set_tests_properties(registry_up_to_date PROPERTIES LABELS Registry)
+else()
+    message(WARNING "Python 3.11+ not found: registry_up_to_date test is not registered")
 endif()

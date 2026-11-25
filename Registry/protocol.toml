@@ -1,0 +1,47 @@
+# The only place where packets are defined. Everything in Generated/ is produced from this file
+# by Tools/Codegen/gen_registry.py (run it after every edit).
+#
+# Rules:
+#  - id: 16 bits. Bit 15 = 1 means server -> client (STOC), 0 means client -> server (CTOS).
+#    Ids 0x7F00-0x7FFF and 0xFF00-0xFFFF are reserved for the library itself.
+#  - An id is never reused. To retire a packet set `deprecated = true`, never delete it
+#    (Registry/ids.lock remembers every id ever used and the generator refuses deletions).
+#  - fields: ordered "name:type". Types: u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 bool string bytes,
+#    or array<T> where T is any of those.
+#
+# Example use case: a small chat service.
+
+[[packet]]
+name = "login"          # client asks to join with a nickname
+id = 0x0001
+fields = ["nickname:string"]
+
+[[packet]]
+name = "chat_send"      # client posts a message
+id = 0x0002
+fields = ["text:string"]
+
+[[packet]]
+name = "ping"           # client latency probe
+id = 0x0003
+fields = ["nonce:u32"]
+
+[[packet]]
+name = "login_ok"       # server accepts the login
+id = 0x8001
+fields = ["user_id:u32"]
+
+[[packet]]
+name = "chat_message"   # server broadcasts a message
+id = 0x8002
+fields = ["user_id:u32", "text:string", "timestamp:u64"]
+
+[[packet]]
+name = "pong"           # server answers a ping with the same nonce
+id = 0x8003
+fields = ["nonce:u32"]
+
+[[packet]]
+name = "user_list"      # server lists who is online
+id = 0x8004
+fields = ["users:array<string>"]

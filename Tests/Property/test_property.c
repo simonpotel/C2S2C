@@ -5,6 +5,7 @@
 
 #include "../check.h"
 #include "Duplex/duplex.h"
+#include "dx_packets.h"
 
 /*
  * Why: hand-written cases only cover what we thought of. Here every type is exercised with
@@ -177,6 +178,78 @@ static void garbage_never_crashes(void)
     CHECK(bad == 0);
 }
 
+/* Writes one random value of a non-array type. */
+static void write_value(dx_writer* w, uint8_t type)
+{
+    uint8_t tmp[80], blob[40];
+    switch (type) {
+    case DX_T_U8:
+    case DX_T_I8:
+        dx_w_u8(w, (uint8_t)rnd());
+        break;
+    case DX_T_U16:
+    case DX_T_I16:
+        dx_w_u16(w, (uint16_t)rnd());
+        break;
+    case DX_T_U32:
+    case DX_T_I32:
+        dx_w_u32(w, (uint32_t)rnd());
+        break;
+    case DX_T_U64:
+    case DX_T_I64:
+        dx_w_u64(w, rnd());
+        break;
+    case DX_T_F32:
+        dx_w_u32(w, (uint32_t)rnd());
+        break;
+    case DX_T_F64:
+        dx_w_u64(w, rnd());
+        break;
+    case DX_T_BOOL:
+        dx_w_u8(w, (uint8_t)(rnd() & 1));
+        break;
+    case DX_T_STRING:
+        dx_w_string(w, (const char*)tmp, rnd_string(tmp));
+        break;
+    default: {
+        uint32_t n = (uint32_t)(rnd() % sizeof blob);
+        for (uint32_t k = 0; k < n; k++)
+            blob[k] = (uint8_t)rnd();
+        dx_w_bytes(w, blob, n);
+    }
+    }
+}
+
+/* Every packet of the registry: a random valid payload must validate by id, and cutting its
+ * last byte must be rejected. This is what keeps each generated layout honest. */
+static void registry_roundtrip(void)
+{
+    for (unsigned i = 0; i < dx_registry_count; i++) {
+        const dx_packet_info* p = &dx_registry[i];
+        int bad = 0;
+        for (int it = 0; it < ITERATIONS; it++) {
+            uint8_t buf[2048];
+            dx_writer w;
+            dx_writer_init(&w, buf, sizeof buf);
+            for (uint16_t f = 0; f < p->schema.count; f++) {
+                const dx_field* fld = &p->schema.fields[f];
+                if (fld->type == DX_T_ARRAY) {
+                    uint16_t count = (uint16_t)(rnd() % 6);
+                    dx_w_u16(&w, count);
+                    for (uint16_t k = 0; k < count; k++)
+                        write_value(&w, fld->elem);
+                } else {
+                    write_value(&w, fld->type);
+                }
+            }
+            bad += w.err || dx_payload_validate(p->id, buf, w.len) != DX_OK ||
+                   (w.len > 0 && dx_payload_validate(p->id, buf, w.len - 1) == DX_OK);
+        }
+        if (bad) printf("packet %s failed %d times\n", p->name, bad);
+        CHECK(bad == 0);
+    }
+}
+
 int main(void)
 {
     const char* env = getenv("DX_SEED");
@@ -196,5 +269,6 @@ int main(void)
     float_roundtrip();
     composite_roundtrip();
     garbage_never_crashes();
+    registry_roundtrip();
     return dx_test_done();
 }
