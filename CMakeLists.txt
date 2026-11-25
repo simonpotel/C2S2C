@@ -13,7 +13,7 @@ include(sanitizers)
 
 # One source list feeds both libraries so they can never diverge.
 set(DX_SOURCES Source/Core/ctx.c Source/Core/header.c Source/Codec/encode.c
-    Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c
+    Source/Codec/decode.c Source/Codec/utf8.c Source/Core/registry.c Source/Memory/ring.c Source/Memory/pool.c
     Generated/C/dx_registry.c)
 
 # Shared lib: what the bindings load (dx_export.h switches on dllexport on Windows).

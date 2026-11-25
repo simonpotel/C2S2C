@@ -14,6 +14,7 @@ endfunction()
 dx_unit_test(test_header)
 dx_unit_test(test_payload)
 dx_unit_test(test_registry)
+dx_unit_test(test_memory)
 
 # Reference vectors: one ctest entry per Vectors/*.bin, so a failure names the exact file.
 add_executable(test_vectors Vectors/test_vectors.c)

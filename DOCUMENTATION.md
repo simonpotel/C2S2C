@@ -138,7 +138,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 ## Layout
 
-`Include/Duplex/` public headers · `Source/Core/` header logic · `Registry/` packet definitions · `Generated/<Lang>/` generated tables · `Tools/Codegen/` generator · `Source/Codec/` byte order, payload read/write, UTF-8 ·
+`Include/Duplex/` public headers · `Source/Core/` header logic · `Registry/` packet definitions · `Generated/<Lang>/` generated tables · `Tools/Codegen/` generator · `Source/Memory/` ring buffer and slot pool (no allocation, caller gives the memory) · `Source/Codec/` byte order, payload read/write, UTF-8 ·
 `CMake/` build modules · `Tests/` tests · `Tools/Scripts/` shell checks.
 
 ## Tests
