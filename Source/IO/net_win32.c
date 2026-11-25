@@ -60,7 +60,10 @@ static int parse_addr(const char* text, uint16_t port, struct sockaddr_storage* 
 static int tune(SOCKET s, int is_stream)
 {
     u_long nonblocking = 1;
-    if (ioctlsocket(s, FIONBIO, &nonblocking) != 0) return DX_ERR_IO;
+    if (ioctlsocket(s, (long)FIONBIO,
+                    &nonblocking) /* the macro is unsigned, the parameter signed */
+        != 0)
+        return DX_ERR_IO;
     if (is_stream) {
         int one = 1;
         (void)setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, (int)sizeof one);
