@@ -1,0 +1,10 @@
+{
+  "name": "duplex",
+  "version": "0.1.0",
+  "description": "Node.js / TypeScript binding of the Duplex packet library (N-API)",
+  "type": "module",
+  "main": "Source/index.ts",
+  "types": "index.d.ts",
+  "engines": { "node": ">=22.6" },
+  "license": "MIT"
+}

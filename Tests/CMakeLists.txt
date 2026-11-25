@@ -209,6 +209,41 @@ if(DX_CARGO AND NOT DX_SANITIZE)
     set_property(GLOBAL APPEND PROPERTY DX_IMPLS "Rust|${DX_RUST_BIN}/chat_server_rust|${DX_RUST_BIN}/chat_client_rust")
 endif()
 
+# Node binding: the N-API addon is built here (headers come from the installed Node), then the
+# binding's tests and the chat examples run with Node's built-in type stripping (.ts directly).
+find_program(DX_NODE_BIN node)
+if(DX_NODE_BIN AND NOT DX_SANITIZE)
+    execute_process(COMMAND ${DX_NODE_BIN} -p "require('path').resolve(process.execPath,'../../include/node')"
+                    OUTPUT_VARIABLE DX_NODE_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(COMMAND ${DX_NODE_BIN} --experimental-strip-types -e "" RESULT_VARIABLE DX_NODE_STRIP
+                    OUTPUT_QUIET ERROR_QUIET)
+    if(EXISTS "${DX_NODE_INCLUDE}/node_api.h" AND DX_NODE_STRIP EQUAL 0)
+        add_library(duplex_node MODULE ${CMAKE_SOURCE_DIR}/Bindings/Node/Source/binding.c)
+        set_target_properties(duplex_node PROPERTIES PREFIX "" SUFFIX ".node" OUTPUT_NAME duplex)
+        target_include_directories(duplex_node SYSTEM PRIVATE ${DX_NODE_INCLUDE})
+        target_include_directories(duplex_node PRIVATE ${CMAKE_SOURCE_DIR}/Include)
+        target_link_libraries(duplex_node PRIVATE duplex)
+        if(APPLE)
+            target_link_options(duplex_node PRIVATE -undefined dynamic_lookup) # N-API comes from node itself
+        endif()
+        # (The addon is a MODULE named duplex.node; the shared library is libduplex: no clash.)
+        set(DX_NODE_ENV DUPLEX_ADDON=$<TARGET_FILE:duplex_node>)
+        set(DX_NODE_RUN "${DX_NODE_BIN} --experimental-strip-types --no-warnings") # one string: it is split by the shell script
+
+        add_test(NAME test_node COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings --test
+                 ${CMAKE_CURRENT_SOURCE_DIR}/Bindings/Node/test_node.ts)
+        set_tests_properties(test_node PROPERTIES LABELS Bindings TIMEOUT 120 ENVIRONMENT "${DX_NODE_ENV}")
+
+        set(DX_NODE_SERVER "${DX_NODE_RUN} ${CMAKE_SOURCE_DIR}/Examples/Node/Server/chat_server.ts")
+        set(DX_NODE_CLIENT "${DX_NODE_RUN} ${CMAKE_SOURCE_DIR}/Examples/Node/Client/chat_client.ts")
+        add_test(NAME example_chat_node COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
+                 "${DX_NODE_SERVER}" "${DX_NODE_CLIENT}")
+        set_tests_properties(example_chat_node PROPERTIES LABELS Examples TIMEOUT 60 ENVIRONMENT "${DX_NODE_ENV}")
+        set_property(GLOBAL APPEND PROPERTY DX_IMPLS "Node|${DX_NODE_SERVER}|${DX_NODE_CLIENT}")
+        set(DX_EXTRA_ENV ${DX_EXTRA_ENV} ${DX_NODE_ENV})
+    endif()
+endif()
+
 # Cross-language matrix: every client implementation against every server implementation, same
 # scenario (Tests/Examples/chat_example.sh) and same checks. One ctest entry per pair, named
 # cross_<client>_to_<server>. Environment variables of every binding are set for all of them.
