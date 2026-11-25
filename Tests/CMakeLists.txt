@@ -65,3 +65,37 @@ if(DX_PYTHON)
 else()
     message(WARNING "Python 3.11+ not found: registry_up_to_date test is not registered")
 endif()
+
+# One test per generated language: its tables must equal Generated/registry.txt.
+# C always runs; the others run only if their toolchain is installed.
+set(DX_GOLDEN ${CMAKE_SOURCE_DIR}/Generated/registry.txt)
+set(DX_GEN_TESTS ${CMAKE_SOURCE_DIR}/Tests/Generated)
+
+add_executable(test_generated_c Generated/C/test_generated.c)
+target_link_libraries(test_generated_c PRIVATE duplex_static)
+dx_enable_warnings(test_generated_c)
+add_test(NAME generated_c COMMAND test_generated_c ${DX_GOLDEN})
+
+find_program(DX_CXX NAMES c++ clang++ g++)
+if(DX_CXX)
+    add_test(NAME generated_cpp COMMAND sh -c
+        "${DX_CXX} -std=c++17 -Wall -Wextra -Werror -I${CMAKE_SOURCE_DIR}/Generated/Cpp ${DX_GEN_TESTS}/Cpp/test_generated.cpp -o test_generated_cpp && ./test_generated_cpp ${DX_GOLDEN}")
+endif()
+if(DX_PYTHON)
+    add_test(NAME generated_python COMMAND ${DX_PYTHON} ${DX_GEN_TESTS}/Python/test_generated.py ${DX_GOLDEN})
+endif()
+find_program(DX_RUSTC rustc)
+if(DX_RUSTC)
+    add_test(NAME generated_rust COMMAND sh -c
+        "${DX_RUSTC} --edition 2021 -D warnings ${DX_GEN_TESTS}/Rust/test_generated.rs -o test_generated_rust && ./test_generated_rust ${DX_GOLDEN}")
+endif()
+find_program(DX_NODE node)
+if(DX_NODE)
+    add_test(NAME generated_typescript COMMAND ${DX_NODE} ${DX_GEN_TESTS}/TypeScript/test_generated.ts ${DX_GOLDEN})
+endif()
+set_tests_properties(generated_c PROPERTIES LABELS Generated)
+foreach(lang cpp python rust typescript)
+    if(TEST generated_${lang})
+        set_tests_properties(generated_${lang} PROPERTIES LABELS Generated)
+    endif()
+endforeach()

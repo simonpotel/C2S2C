@@ -102,7 +102,7 @@ const unsigned dx_registry_count = {len(ps)};
 
 def gen_cpp(ps):
     consts = "\n".join(f"constexpr uint16_t {p['name'].upper()} = 0x{p['id']:04X};" for p in ps)
-    rows = "\n".join(f'    {{0x{p["id"]:04X}, "{p["name"]}", "{schema_text(p)}"}},' for p in ps)
+    rows = "\n".join(f'    {{{p["name"].upper()}, "{p["name"]}", "{schema_text(p)}"}},' for p in ps)
     return f"""// {BANNER}
 #pragma once
 #include <cstdint>
@@ -120,7 +120,7 @@ inline constexpr Info all[] = {{
 
 def gen_py(ps):
     consts = "\n".join(f"{p['name'].upper()} = 0x{p['id']:04X}" for p in ps)
-    rows = "\n".join(f'    0x{p["id"]:04X}: ("{p["name"]}", "{schema_text(p)}"),' for p in ps)
+    rows = "\n".join(f'    {p["name"].upper()}: ("{p["name"]}", "{schema_text(p)}"),' for p in ps)
     return f'''# {BANNER}
 {consts}
 
@@ -133,7 +133,7 @@ PACKETS = {{
 
 def gen_rust(ps):
     consts = "\n".join(f"pub const {p['name'].upper()}: u16 = 0x{p['id']:04X};" for p in ps)
-    rows = "\n".join(f'    (0x{p["id"]:04X}, "{p["name"]}", "{schema_text(p)}"),' for p in ps)
+    rows = "\n".join(f'    ({p["name"].upper()}, "{p["name"]}", "{schema_text(p)}"),' for p in ps)
     return f"""// {BANNER}
 {consts}
 
@@ -146,7 +146,7 @@ pub const PACKETS: &[(u16, &str, &str)] = &[
 
 def gen_ts(ps):
     consts = "\n".join(f"export const {p['name'].upper()} = 0x{p['id']:04X};" for p in ps)
-    rows = "\n".join(f'  [0x{p["id"]:04X}, {{ name: "{p["name"]}", schema: "{schema_text(p)}" }}],' for p in ps)
+    rows = "\n".join(f'  [{p["name"].upper()}, {{ name: "{p["name"]}", schema: "{schema_text(p)}" }}],' for p in ps)
     return f"""// {BANNER}
 {consts}
 
@@ -156,13 +156,20 @@ export const PACKETS = new Map<number, {{ name: string; schema: string }}>([
 """
 
 
+def gen_golden(ps):
+    """Language-neutral listing: every language test compares its own tables against this."""
+    return "".join(f"0x{p['id']:04X} {p['name']} {schema_text(p)}\n" for p in ps)
+
+
+# One folder per target language, plus the neutral listing used by the tests.
 OUTPUTS = {
-    "Generated/dx_packets.h": gen_c_header,
-    "Generated/dx_registry.c": gen_c_source,
-    "Generated/dx_packets.hpp": gen_cpp,
-    "Generated/duplex_registry.py": gen_py,
-    "Generated/registry.rs": gen_rust,
-    "Generated/registry.ts": gen_ts,
+    "Generated/C/dx_packets.h": gen_c_header,
+    "Generated/C/dx_registry.c": gen_c_source,
+    "Generated/Cpp/dx_packets.hpp": gen_cpp,
+    "Generated/Python/duplex_registry.py": gen_py,
+    "Generated/Rust/registry.rs": gen_rust,
+    "Generated/TypeScript/registry.ts": gen_ts,
+    "Generated/registry.txt": gen_golden,
 }
 
 
@@ -190,6 +197,7 @@ def main():
             if not file.exists() or file.read_text() != text:
                 stale.append(path)
         else:
+            file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(text)
     if stale:
         print("stale (run Tools/Codegen/gen_registry.py):", *stale)

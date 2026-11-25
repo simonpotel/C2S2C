@@ -92,8 +92,10 @@ uint16_t n; const char* s = dx_r_string(&r, &n);   /* points into buf, not NUL-t
 
 `Registry/protocol.toml` is the **only** place packets are defined (name, id, fields). The script
 `Tools/Codegen/gen_registry.py` (Python 3.11+, no dependency) turns it into ready-made tables
-for every language in `Generated/`: C (`dx_packets.h`, `dx_registry.c`), C++, Python, Rust,
-TypeScript. Never edit `Generated/` by hand; edit the TOML, then run the script.
+for every language, one folder each: `Generated/C`, `Generated/Cpp`, `Generated/Python`,
+`Generated/Rust`, `Generated/TypeScript`, plus the language-neutral listing
+`Generated/registry.txt` (`0x8002 chat_message u32,string,u64`, one packet per line).
+Never edit `Generated/` by hand; edit the TOML, then run the script.
 
 ```toml
 [[packet]]
@@ -136,7 +138,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 ## Layout
 
-`Include/Duplex/` public headers · `Source/Core/` header logic · `Registry/` + `Generated/` packet definitions and generated tables · `Tools/Codegen/` generator · `Source/Codec/` byte order, payload read/write, UTF-8 ·
+`Include/Duplex/` public headers · `Source/Core/` header logic · `Registry/` packet definitions · `Generated/<Lang>/` generated tables · `Tools/Codegen/` generator · `Source/Codec/` byte order, payload read/write, UTF-8 ·
 `CMake/` build modules · `Tests/` tests · `Tools/Scripts/` shell checks.
 
 ## Tests
@@ -150,6 +152,7 @@ are short shell scripts.
 | Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
 | Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
 | Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
+| Generated | one test per language (`Tests/Generated/<Lang>/`) checks that its generated code lists the same packets, names and layouts as `Generated/registry.txt`; C always runs, C++/Python/Rust/TypeScript run if `c++`, Python 3.11+, `rustc`, `node` (22.6+) are installed |
 | Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
 | Fuzz | libFuzzer feeds random bytes to the decoders under ASan/UBSan |
 | Abi | exported symbols equal `Tests/Abi/symbols.txt` |

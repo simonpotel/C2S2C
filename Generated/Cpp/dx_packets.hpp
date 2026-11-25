@@ -13,12 +13,12 @@ constexpr uint16_t USER_LIST = 0x8004;
 
 struct Info { uint16_t id; const char* name; const char* schema; };
 inline constexpr Info all[] = {
-    {0x0001, "login", "string"},
-    {0x0002, "chat_send", "string"},
-    {0x0003, "ping", "u32"},
-    {0x8001, "login_ok", "u32"},
-    {0x8002, "chat_message", "u32,string,u64"},
-    {0x8003, "pong", "u32"},
-    {0x8004, "user_list", "array<string>"},
+    {LOGIN, "login", "string"},
+    {CHAT_SEND, "chat_send", "string"},
+    {PING, "ping", "u32"},
+    {LOGIN_OK, "login_ok", "u32"},
+    {CHAT_MESSAGE, "chat_message", "u32,string,u64"},
+    {PONG, "pong", "u32"},
+    {USER_LIST, "user_list", "array<string>"},
 };
 }  // namespace duplex::pkt

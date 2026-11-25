@@ -8,11 +8,11 @@ export const PONG = 0x8003;
 export const USER_LIST = 0x8004;
 
 export const PACKETS = new Map<number, { name: string; schema: string }>([
-  [0x0001, { name: "login", schema: "string" }],
-  [0x0002, { name: "chat_send", schema: "string" }],
-  [0x0003, { name: "ping", schema: "u32" }],
-  [0x8001, { name: "login_ok", schema: "u32" }],
-  [0x8002, { name: "chat_message", schema: "u32,string,u64" }],
-  [0x8003, { name: "pong", schema: "u32" }],
-  [0x8004, { name: "user_list", schema: "array<string>" }],
+  [LOGIN, { name: "login", schema: "string" }],
+  [CHAT_SEND, { name: "chat_send", schema: "string" }],
+  [PING, { name: "ping", schema: "u32" }],
+  [LOGIN_OK, { name: "login_ok", schema: "u32" }],
+  [CHAT_MESSAGE, { name: "chat_message", schema: "u32,string,u64" }],
+  [PONG, { name: "pong", schema: "u32" }],
+  [USER_LIST, { name: "user_list", schema: "array<string>" }],
 ]);
