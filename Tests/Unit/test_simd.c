@@ -42,9 +42,9 @@ static void test_hardware_equals_portable(void)
         return;
     }
     uint8_t buf[600];
-    unsigned long seed = 12345;
+    uint64_t seed = 12345;
     for (size_t i = 0; i < sizeof buf; i++) {
-        seed = seed * 6364136223846793005ul + 1442695040888963407ul;
+        seed = seed * 6364136223846793005ull + 1442695040888963407ull;
         buf[i] = (uint8_t)(seed >> 56);
     }
     int bad = 0;

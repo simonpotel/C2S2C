@@ -70,13 +70,13 @@ static void test_ring_random(void)
         uint8_t id;
     } q[LIVE];
     unsigned head = 0, count = 0;
-    unsigned long seed = 12345;
+    uint64_t seed = 12345;
     int bad = 0;
     dx_ring r;
     dx_ring_init(&r, mem, CAP);
 
     for (int i = 0; i < 200000; i++) {
-        seed = seed * 6364136223846793005ul + 1442695040888963407ul;
+        seed = seed * 6364136223846793005ull + 1442695040888963407ull;
         unsigned op = (unsigned)(seed >> 33) % 3;
         if (op < 2 && count < LIVE) { /* push (twice as likely) */
             uint32_t n = (uint32_t)(seed >> 40) % 40, adv;
