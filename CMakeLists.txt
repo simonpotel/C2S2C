@@ -24,6 +24,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_compile_definitions(_GNU_SOURCE)
 endif()
 
+# The Windows C library marks fopen, getenv... "unsafe" and prefers its own _s variants; the code
+# is portable C and checks its arguments, so those warnings are switched off.
+if(WIN32)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/CMake)
 include(compiler_warnings)
 include(sanitizers)
