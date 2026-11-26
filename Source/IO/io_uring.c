@@ -26,6 +26,10 @@
  */
 #define NO_REPLY (~0ull) /* user_data of requests whose answer we do not care about */
 #define RING_ENTRIES 4096u
+/* Each socket has one poll request outstanding, and a change or removal adds two answers
+ * (the cancelled poll and the removal). The completion queue is sized for that, so answers do
+ * not overflow into the kernel's backlog (the kernel clamps it to its own maximum). */
+#define CQ_PER_FD 4u
 #define MAX_FD_TABLE (1u << 20)
 
 typedef struct reg {
@@ -96,6 +100,9 @@ static c2s2c_io* uring_open(const c2s2c_alloc* a, uint32_t max_fds)
 
     struct io_uring_params p;
     memset(&p, 0, sizeof p);
+    p.flags = IORING_SETUP_CQSIZE | IORING_SETUP_CLAMP;
+    p.cq_entries = max_fds > (UINT32_MAX / CQ_PER_FD) ? UINT32_MAX : max_fds * CQ_PER_FD;
+    if (p.cq_entries < 2 * RING_ENTRIES) p.cq_entries = 2 * RING_ENTRIES;
     io->ring_fd = (int)syscall(__NR_io_uring_setup, RING_ENTRIES, &p);
     if (io->ring_fd < 0 || !(p.features & IORING_FEAT_EXT_ARG))
         goto fail; /* kernel too old or io_uring blocked */
@@ -246,8 +253,9 @@ static int uring_wait(c2s2c_io* io, c2s2c_io_event* out, int max, int timeout_ms
         (void)uring_enter(io->ring_fd, io->pending, min_complete,
                           IORING_ENTER_GETEVENTS | IORING_ENTER_EXT_ARG, &arg, sizeof arg);
     } else {
-        (void)uring_enter(io->ring_fd, io->pending, min_complete,
-                          min_complete ? IORING_ENTER_GETEVENTS : 0, NULL, 0);
+        /* GETEVENTS even when not waiting: it makes the kernel move answers that overflowed
+         * into its backlog back to the queue; without it they would never be seen. */
+        (void)uring_enter(io->ring_fd, io->pending, min_complete, IORING_ENTER_GETEVENTS, NULL, 0);
     }
     io->pending = 0;
 

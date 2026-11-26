@@ -85,6 +85,7 @@ static unsigned env_or(const char* name, unsigned dflt)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IONBF, 0); /* a run killed by a timeout still shows how far it got */
     long fds = c2s2c_net_raise_fd_limit();
     unsigned conns = env_or("C2S2C_STRESS_CONNS", 10000);
     unsigned max_by_fds = fds > 200 ? (unsigned)((fds - 100) / 2) : 50;
@@ -102,6 +103,7 @@ int main(void)
     /* Connect in bursts and serve the listener in between: the operating system keeps only a
      * short queue of not-yet-accepted connections (128 on macOS) and refuses the overflow. */
     unsigned opened = 0;
+    uint64_t t_start = test_now_ms();
     for (unsigned i = 0; i < conns; i++) {
         if (c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &handle[i]) !=
             C2S2C_OK) {
@@ -112,13 +114,17 @@ int main(void)
         opened++;
         if (i % 64 == 63) { /* let the server accept the whole burst before the next one */
             uint64_t w0 = test_now_ms();
-            while (S.connected < i + 1 && test_now_ms() - w0 < 5000) {
+            /* A refused connection ends as a disconnection on the client side; counting it keeps
+             * one lost connection from making every later burst wait for nothing. */
+            while (S.connected + C.disconnected < opened && test_now_ms() - w0 < 5000) {
                 pump(&S);
                 pump(&C);
             }
         }
     }
     conns = opened;
+    printf("connect: %u opened, %u accepted, %u refused, %llu ms\n", opened, S.connected,
+           C.disconnected, (unsigned long long)(test_now_ms() - t_start));
     CHECK(conns >= 1000); /* anything below would not be a stress test */
     uint64_t t0 = test_now_ms();
     while ((S.connected < conns || C.connected < conns) && test_now_ms() - t0 < 60000) {
@@ -157,6 +163,8 @@ int main(void)
         pump(&C);
     }
     long rss_early = rss_kb();
+    printf("warm-up: %llu pongs of %llu, %llu ms\n", (unsigned long long)C.pongs,
+           (unsigned long long)sent, (unsigned long long)(test_now_ms() - t_start));
 
     /* Traffic: keep sending pings round-robin until the time is up. */
     uint64_t start = test_now_ms();

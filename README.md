@@ -140,6 +140,6 @@ use it in another project is in [USE.md](USE.md).
 ## Status
 
 Everything above is implemented and tested in CI. Known gaps: no IOCP backend on Windows (it uses
-`WSAPoll`), and the stress test times out on the io_uring backend (being fixed).
+`WSAPoll`).
 
 License: MIT.
