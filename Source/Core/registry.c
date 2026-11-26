@@ -10,7 +10,7 @@
  */
 static int find_index(uint16_t id)
 {
-    unsigned lo = 0, hi = c2s2c_registry_count;
+    unsigned lo = 0, hi = c2s2c_registry_size;
     while (lo < hi) {
         unsigned mid = lo + (hi - lo) / 2;
         if (c2s2c_registry[mid].id == id) return (int)mid;
@@ -33,6 +33,20 @@ int c2s2c_payload_validate(uint16_t packet_id, const uint8_t* in, uint32_t len)
     const c2s2c_packet_info* p = find_packet(packet_id);
     if (!p) return C2S2C_ERR_UNKNOWN_ID; /* never guess the layout of a packet we do not know */
     return c2s2c_payload_validate_schema(&p->schema, in, len);
+}
+
+uint32_t c2s2c_registry_count(void)
+{
+    return c2s2c_registry_size;
+}
+
+int c2s2c_registry_get(uint32_t index, uint16_t* id, const char** name, const char** layout)
+{
+    if (index >= c2s2c_registry_size || !id || !name || !layout) return C2S2C_ERR_INVALID_ARG;
+    *id = c2s2c_registry[index].id;
+    *name = c2s2c_registry[index].name;
+    *layout = c2s2c_registry[index].layout;
+    return C2S2C_OK;
 }
 
 const char* c2s2c_packet_name(uint16_t packet_id)

@@ -6,18 +6,19 @@
 // thrown as C2S2CError carrying the library's code.
 // Run it with Node 22.6+ (`node --experimental-strip-types`) or Node 24, which run .ts directly.
 import { createRequire } from "node:module";
-import { C2S2CError, decode, encode } from "./codec.ts";
+import { C2S2CError, decode, encode, packets, useLibrary } from "./codec.ts";
 import type { Value } from "./codec.ts";
 
-export { C2S2CError, decode, encode };
+export { C2S2CError, decode, encode, packets };
 export type { Value };
 
 const require = createRequire(import.meta.url);
 const native = require(process.env.C2S2C_ADDON ?? new URL("./c2s2c.node", import.meta.url).pathname);
 
-// Interface version this binding was written for: major 2.
+// Interface version this binding was written for: major 1.
 const abi: number = native.abiVersion();
-if (abi >> 16 !== 2) throw new Error("incompatible libc2s2c version");
+if (abi >> 16 !== 1) throw new Error("incompatible libc2s2c version");
+useLibrary(native.registry(), native.strerror); // packet table and messages come from the library
 
 export const SYS_CONNECTED = 0x7f01;
 export const SYS_DISCONNECTED = 0x7f02;

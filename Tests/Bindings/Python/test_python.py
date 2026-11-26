@@ -7,7 +7,7 @@ import time
 import unittest
 
 import c2s2c
-import c2s2c_registry as reg
+from c2s2c import packets as reg
 
 
 def spin(contexts, done, seconds=10):
@@ -43,6 +43,12 @@ class Errors(unittest.TestCase):
         with c2s2c.Context() as ctx:
             pass
         ctx.close()  # closing twice is harmless
+
+
+class Registry(unittest.TestCase):
+    def test_packet_ids_come_from_the_library(self):
+        self.assertEqual((reg.PING, reg.PONG, reg.CHAT_MESSAGE), (0x0003, 0x8003, 0x8002))
+        self.assertEqual(c2s2c.encode(reg.LOGIN, "hi"), bytes([2, 0, 0x68, 0x69]))
 
 
 class Codec(unittest.TestCase):

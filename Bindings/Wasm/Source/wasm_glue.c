@@ -145,6 +145,28 @@ uint32_t c2s2c_wasm_crc32c(uint32_t crc, uint32_t len)
     return c2s2c_crc32c(crc, scratch, len);
 }
 
+/**
+ * Registry entry @p index written to scratch as "id name layout" (text, so JavaScript can split
+ * it). Returns its length, or 0 when the index is out of range.
+ */
+uint32_t c2s2c_wasm_registry_get(uint32_t index)
+{
+    uint16_t id;
+    const char *name, *layout;
+    if (c2s2c_registry_get(index, &id, &name, &layout) != C2S2C_OK) return 0;
+    uint32_t n = 0;
+    const char hex[] = "0123456789abcdef";
+    for (int shift = 12; shift >= 0; shift -= 4)
+        scratch[n++] = (uint8_t)hex[(id >> shift) & 0xFu];
+    scratch[n++] = ' ';
+    while (*name)
+        scratch[n++] = (uint8_t)*name++;
+    scratch[n++] = ' ';
+    while (*layout)
+        scratch[n++] = (uint8_t)*layout++;
+    return n;
+}
+
 /** Copies the message of an error code to scratch and returns its length. */
 uint32_t c2s2c_wasm_strerror(int err)
 {

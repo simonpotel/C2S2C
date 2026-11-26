@@ -194,7 +194,8 @@ impl<'a> Packet<'a> {
         let data = if raw.length == 0 {
             &[][..]
         } else {
-            std::slice::from_raw_parts(raw.data, raw.length as usize)
+            // SAFETY: the library guarantees `length` readable bytes at `data` for the batch lifetime.
+            unsafe { std::slice::from_raw_parts(raw.data, raw.length as usize) }
         };
         Packet { conn: raw.conn, id: raw.packet_id, sequence: raw.sequence, data }
     }

@@ -1,6 +1,9 @@
 // Type declarations of the C2S2C Node binding (see Source/index.ts for the implementation).
 // SPDX-License-Identifier: MIT
 
+/** Packet ids by name (packets.PING...), read from the library at load time. */
+export const packets: Record<string, number>;
+
 export const SYS_CONNECTED: number;
 export const SYS_DISCONNECTED: number;
 

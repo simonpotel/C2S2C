@@ -1,33 +1,36 @@
 // codec.ts - payload encoding/decoding by registry layout; no Node-specific code, so browsers use it too.
 // SPDX-License-Identifier: MIT
 //
-// A packet's payload is a plain sequence of fields (see DOCUMENTATION.md). The
-// layout of each packet comes from the registry; this file turns JavaScript values into those
-// bytes and back. (The C library re-validates everything it sends and receives.)
-import { PACKETS } from "../../../Generated/TypeScript/registry.ts";
+// A packet's payload is a plain sequence of fields (see DOCUMENTATION.md). The packet table and the
+// error messages are not copied here: they come from the library itself (the native addon in Node,
+// the WebAssembly module in browsers), which calls useLibrary() when it loads.
 
-export const ERROR_MESSAGES: Record<number, string> = {
-  0: "success", [-1]: "invalid argument", [-2]: "truncated input", [-3]: "bad magic",
-  [-4]: "unsupported protocol version", [-5]: "reserved flag bits set",
-  [-6]: "packet id does not match direction", [-7]: "payload too large", [-8]: "invalid UTF-8",
-  [-9]: "invalid value for type", [-10]: "unexpected trailing bytes", [-11]: "invalid schema",
-  [-12]: "output buffer too small", [-13]: "unknown packet id", [-14]: "send buffer full",
-  [-15]: "socket error", [-16]: "unexpected sequence number",
-  [-17]: "packet travels the wrong direction", [-18]: "out of memory", [-19]: "limit reached",
-  [-20]: "invalid connection", [-21]: "connection timed out", [-22]: "rejected by a hook",
-};
+type Entry = { name: string; layout: string };
+const table = new Map<number, Entry>();
+let messageOf: (code: number) => string = (code) => `error ${code}`;
+
+/** Packet ids by name (packets.PING, packets.CHAT_MESSAGE...), filled from the library. */
+export const packets: Record<string, number> = {};
+
+/** Called by the code that loaded the library: its registry entries and its error messages. */
+export function useLibrary(entries: [number, string, string][], strerror: (code: number) => string) {
+  table.clear();
+  for (const [id, name, layout] of entries) {
+    table.set(id, { name, layout });
+    packets[name.toUpperCase()] = id;
+  }
+  messageOf = strerror;
+}
 
 /** An error from the library: `code` is the C2S2C_ERR_* value (negative). */
 export class C2S2CError extends Error {
   code: number;
   constructor(code: number) {
-    super(ERROR_MESSAGES[code] ?? `error ${code}`);
+    super(messageOf(code));
     this.name = "C2S2CError";
     this.code = code;
   }
 }
-
-// ---- payload codec driven by the registry layouts ("u32,string,array<u16>") ----
 
 type Value = number | bigint | boolean | string | Uint8Array | Value[];
 const FIXED: Record<string, [number, string]> = {
@@ -37,9 +40,9 @@ const FIXED: Record<string, [number, string]> = {
 };
 
 function schemaOf(id: number): string[] {
-  const entry = PACKETS.get(id);
+  const entry = table.get(id);
   if (!entry) throw new C2S2CError(-13);
-  return entry.schema ? entry.schema.split(",") : [];
+  return entry.layout ? entry.layout.split(",") : [];
 }
 
 function writeValue(kind: string, value: Value): Uint8Array {

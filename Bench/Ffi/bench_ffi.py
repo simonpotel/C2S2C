@@ -3,7 +3,7 @@ this one process, 32 pings in flight, one second). SPDX-License-Identifier: MIT"
 import time
 
 import c2s2c
-import c2s2c_registry as reg
+from c2s2c import packets as reg
 
 server, client = c2s2c.Context(), c2s2c.Context()
 server.listen("127.0.0.1", 0)

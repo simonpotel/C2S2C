@@ -225,7 +225,7 @@ static void write_value(c2s2c_writer* w, uint8_t type)
  * last byte must be rejected. This is what keeps each generated layout honest. */
 static void registry_roundtrip(void)
 {
-    for (unsigned i = 0; i < c2s2c_registry_count; i++) {
+    for (unsigned i = 0; i < c2s2c_registry_size; i++) {
         const c2s2c_packet_info* p = &c2s2c_registry[i];
         int bad = 0;
         for (int it = 0; it < ITERATIONS; it++) {

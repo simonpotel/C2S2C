@@ -69,12 +69,13 @@ def gen_c_header(ps):
 typedef struct c2s2c_packet_info {{
     uint16_t id;
     const char* name;
-    int deprecated; /* 1 = retired id: still valid, do not use in new code */
+    const char* layout; /* field types, e.g. "u32,string,u64" (what c2s2c_registry_get returns) */
+    int deprecated;     /* 1 = retired id: still valid, do not use in new code */
     c2s2c_schema schema;
 }} c2s2c_packet_info;
 
 extern const c2s2c_packet_info c2s2c_registry[];
-extern const unsigned c2s2c_registry_count;
+extern const unsigned c2s2c_registry_size;
 
 #endif
 """
@@ -87,7 +88,7 @@ def gen_c_source(ps):
         if p["fields"]:
             arrays.append(f"static const c2s2c_field c2s2c_f_{n}[] = {{{', '.join(c_field(t) for _, t in p['fields'])}}};")
         fields = f"c2s2c_f_{n}" if p["fields"] else "NULL"
-        rows.append(f"    {{0x{p['id']:04X}u, \"{n}\", {int(p['deprecated'])}, {{{len(p['fields'])}, {fields}}}}},")
+        rows.append(f"    {{0x{p['id']:04X}u, \"{n}\", \"{schema_text(p)}\", {int(p['deprecated'])}, {{{len(p['fields'])}, {fields}}}}},")
     return f"""/* {BANNER} */
 #include "c2s2c_packets.h"
 
@@ -96,7 +97,7 @@ def gen_c_source(ps):
 const c2s2c_packet_info c2s2c_registry[] = {{
 {chr(10).join(rows)}
 }};
-const unsigned c2s2c_registry_count = {len(ps)};
+const unsigned c2s2c_registry_size = {len(ps)};
 """
 
 
@@ -118,18 +119,6 @@ inline constexpr Info all[] = {{
 """
 
 
-def gen_py(ps):
-    consts = "\n".join(f"{p['name'].upper()} = 0x{p['id']:04X}" for p in ps)
-    rows = "\n".join(f'    {p["name"].upper()}: ("{p["name"]}", "{schema_text(p)}"),' for p in ps)
-    return f'''# {BANNER}
-{consts}
-
-# id -> (name, schema)
-PACKETS = {{
-{rows}
-}}
-'''
-
 
 def gen_rust(ps):
     consts = "\n".join(f"pub const {p['name'].upper()}: u16 = 0x{p['id']:04X};" for p in ps)
@@ -144,31 +133,20 @@ pub const PACKETS: &[(u16, &str, &str)] = &[
 """
 
 
-def gen_ts(ps):
-    consts = "\n".join(f"export const {p['name'].upper()} = 0x{p['id']:04X};" for p in ps)
-    rows = "\n".join(f'  [{p["name"].upper()}, {{ name: "{p["name"]}", schema: "{schema_text(p)}" }}],' for p in ps)
-    return f"""// {BANNER}
-{consts}
-
-export const PACKETS = new Map<number, {{ name: string; schema: string }}>([
-{rows}
-]);
-"""
-
 
 def gen_golden(ps):
     """Language-neutral listing: every language test compares its own tables against this."""
     return "".join(f"0x{p['id']:04X} {p['name']} {schema_text(p)}\n" for p in ps)
 
 
-# One folder per target language, plus the neutral listing used by the tests.
+# Compiled languages get constants (they need them at compile time). Python, Node and browsers
+# read the registry from the library at run time (c2s2c_registry_get), so nothing is generated
+# for them. registry.txt is the neutral listing used by the tests and by any other language.
 OUTPUTS = {
     "Generated/C/c2s2c_packets.h": gen_c_header,
     "Generated/C/c2s2c_registry.c": gen_c_source,
     "Generated/Cpp/c2s2c_packets.hpp": gen_cpp,
-    "Generated/Python/c2s2c_registry.py": gen_py,
     "Generated/Rust/registry.rs": gen_rust,
-    "Generated/TypeScript/registry.ts": gen_ts,
     "Generated/registry.txt": gen_golden,
 }
 

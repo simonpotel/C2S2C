@@ -47,7 +47,7 @@ int main(int argc, char** argv)
 
         /* Find the entry with that id and compare name and schema text. */
         const c2s2c_packet_info* p = NULL;
-        for (unsigned i = 0; i < c2s2c_registry_count; i++)
+        for (unsigned i = 0; i < c2s2c_registry_size; i++)
             if (c2s2c_registry[i].id == id) p = &c2s2c_registry[i];
         CHECK(p != NULL);
         if (!p) continue;
@@ -56,6 +56,6 @@ int main(int argc, char** argv)
         lines++;
     }
     fclose(f);
-    CHECK(lines == c2s2c_registry_count); /* nothing missing, nothing extra */
+    CHECK(lines == c2s2c_registry_size); /* nothing missing, nothing extra */
     return c2s2c_test_done();
 }

@@ -4,9 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Context, C2S2CError, decode, encode } from "../../../Bindings/Node/Source/index.ts";
-import { ERROR_MESSAGES } from "../../../Bindings/Node/Source/codec.ts";
-import { createRequire } from "node:module";
-import * as reg from "../../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../../Bindings/Node/Source/index.ts";
 
 /** Runs both contexts until done() or 10 s (no fixed sleeps). */
 function spin(a: Context, b: Context, done: () => boolean): boolean {
@@ -123,10 +121,7 @@ test("disconnect reason reaches the hook", () => {
   assert.deepEqual(reasons, [0]);
 });
 
-test("the error messages of the pure codec match the C library", () => {
-  // codec.ts repeats the messages so browsers can use it; this test catches any drift.
-  const native = createRequire(import.meta.url)(process.env.C2S2C_ADDON as string);
-  for (const code of Object.keys(ERROR_MESSAGES).map(Number)) {
-    assert.equal(ERROR_MESSAGES[code], native.strerror(code), `code ${code}`);
-  }
+test("packet ids and error messages come from the library", () => {
+  assert.deepEqual([reg.PING, reg.PONG, reg.CHAT_MESSAGE], [0x0003, 0x8003, 0x8002]);
+  assert.equal(new C2S2CError(-20).message, "invalid connection");
 });

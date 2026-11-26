@@ -8,7 +8,7 @@ import sys
 import time
 
 import c2s2c
-import c2s2c_registry as reg
+from c2s2c import packets as reg
 
 users = {}  # connection handle -> nickname
 stop = False

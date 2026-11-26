@@ -2,7 +2,7 @@
 // poll: replies to a whole batch with one sendMany call; dispatch: JS handlers over the same batches.
 // SPDX-License-Identifier: MIT
 import { Context } from "../../../Bindings/Node/Source/index.ts";
-import * as reg from "../../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../../Bindings/Node/Source/index.ts";
 
 const ctx = new Context({ maxConns: 4096, maxPayload: 1024, idleTimeoutMs: 1000 });
 ctx.listen("127.0.0.1", 0);

@@ -1,6 +1,6 @@
 # C2S2C
 
-![C11](https://img.shields.io/badge/C11-00599C?style=for-the-badge&logo=c&logoColor=white)
+![C23](https://img.shields.io/badge/C23-00599C?style=for-the-badge&logo=c&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
 ![No dependencies](https://img.shields.io/badge/Dependencies-none-2EA44F?style=for-the-badge)
 ![License MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
@@ -33,7 +33,7 @@ a TCP stream into packets, checking every header field, refusing hostile input, 
 packets, buffering, an event loop. It is tedious and slow to write, easy to get subtly wrong, and
 it is written again for each language of the stack.
 
-C2S2C writes it **once**, in C11, and every language uses the same compiled library
+C2S2C writes it **once**, in C23, and every language uses the same compiled library
 (`libc2s2c`) through a thin binding. Packets are defined once in `Registry/protocol.toml`.
 
 ## The problem, as people meet it
@@ -86,7 +86,7 @@ other's bytes:
 | Folder | Content |
 |---|---|
 | `Include/`, `Source/` | the C library: framing, validation, batched `c2s2c_poll`, sockets (epoll, kqueue, io_uring, poll/WSAPoll), a native relay |
-| `Registry/`, `Generated/` | the packet definitions, and the ids generated from them for each language |
+| `Registry/`, `Generated/` | the packet definitions; constants generated for C, C++ and Rust (Python, Node and browsers read the table from the library) |
 | `Bindings/` | Rust, Python, Node/TypeScript, C++, and a 6 KB WebAssembly build for browsers |
 | `Examples/` | the same chat server and client in Rust, Python and Node, and a web chat |
 | `Tests/`, `Bench/` | C tests, fuzzing, faults, stress, cross-language tests, benchmarks |
@@ -108,12 +108,13 @@ Bindings and examples:
 ## Use it
 
 ```bash
-cmake --preset release && cmake --build --preset release   # CMake ≥ 3.20, Ninja, a C11 compiler
+cmake --preset release && cmake --build --preset release   # CMake ≥ 3.25, Ninja, a C23 compiler
 ctest --preset release                                     # every test this machine can run
 ```
 
 ```python
-import c2s2c, c2s2c_registry as reg              # Bindings/Python + Generated/Python
+import c2s2c                                      # Bindings/Python
+from c2s2c import packets as reg                  # packet ids, read from the library
 ctx = c2s2c.Context(); ctx.listen("127.0.0.1", 0)
 while True:
     with ctx.poll(100) as batch:                    # many packets per call into the library
@@ -121,14 +122,20 @@ while True:
 ```
 
 Rust, Node and the browser look the same: see `Examples/` and [DOCUMENTATION.md](DOCUMENTATION.md)
-(wire format, API, every binding, tests, performance).
+(wire format, API, every binding, tests, performance). Integrating it with an agent: [USE.md](USE.md).
+
+**As a dependency, from any language:** each [release](../../releases) has one archive per
+platform (`c2s2c-<version>-<platform>.tar.gz`: headers, shared and static libraries, packet
+registry, pkg-config file). Nothing in it is tied to one language: C#, Go, Java... load the
+library with their FFI and declare the functions of `include/C2S2C/c2s2c.h`.
 
 ## Also an experiment
 
 This project is also a test of how far an AI coding agent (Claude Code) can go on **low-level
 work**: design a binary protocol, write the C, the sockets and the bindings, then prove with
 fuzzing, sanitizers and benchmarks that the shared engine is faster and safer than rewriting the
-mechanism in each project. The rules the agent follows are in [AGENTS.md](AGENTS.md).
+mechanism in each project. The rules the agent follows when changing C2S2C are in [AGENTS.md](AGENTS.md); how an agent should
+use it in another project is in [USE.md](USE.md).
 
 ## Status
 

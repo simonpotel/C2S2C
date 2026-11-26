@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.20)
-project(C2S2C VERSION 0.1.0 LANGUAGES C)
+cmake_minimum_required(VERSION 3.25)
+project(C2S2C VERSION 1.0.0 LANGUAGES C) # major = ABI major (C2S2C_ABI_VERSION)
 
 # The C++ binding is optional: it is built and tested only if a C++ compiler exists.
 include(CheckLanguage)
@@ -8,12 +8,12 @@ if(NOT WIN32) # (the C++ binding is not part of the Windows build)
 endif()
 if(CMAKE_CXX_COMPILER)
     enable_language(CXX)
-    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD 23) # the binding needs C++17; it is built and tested with the latest
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 23) # the latest published C standard (ISO/IEC 9899:2024)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF) # strict ISO C11: no accidental GNU-only code
 set(CMAKE_C_VISIBILITY_PRESET hidden) # export only C2S2C_API symbols (see c2s2c_export.h)
@@ -78,6 +78,27 @@ foreach(t c2s2c c2s2c_static)
         target_link_libraries(${t} PUBLIC ws2_32) # Winsock
     endif()
 endforeach()
+
+# Shared library version: the file name carries the ABI major (libc2s2c.so.2, libc2s2c.2.dylib).
+set_target_properties(c2s2c PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
+
+# Installation layout, also the content of the release archives (see .github/workflows/release.yml):
+#   include/C2S2C/*.h, include/c2s2c_packets.h   the C interface and the packet ids
+#   lib/ (and bin/ on Windows)                      shared and static libraries
+#   share/c2s2c/                                    protocol.toml, registry.txt, README.md, LICENSE
+#   lib/pkgconfig/c2s2c.pc                          for C/C++ build systems
+# Nothing in it is specific to one language: any language that can call a C library can use it.
+include(GNUInstallDirs)
+install(TARGETS c2s2c c2s2c_static
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY Include/C2S2C DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES Generated/C/c2s2c_packets.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES Registry/protocol.toml Generated/registry.txt LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/c2s2c)
+install(FILES Tools/Release/package_readme.md DESTINATION ${CMAKE_INSTALL_DATADIR}/c2s2c RENAME README.md)
+configure_file(CMake/c2s2c.pc.in ${CMAKE_BINARY_DIR}/c2s2c.pc @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/c2s2c.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 enable_testing()
 add_subdirectory(Tests)

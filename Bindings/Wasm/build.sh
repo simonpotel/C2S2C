@@ -12,7 +12,7 @@ mkdir -p "$(dirname "$out")"
 # (stdint.h, stddef.h) and our tiny string.h are used.
 resource=$("$clang" --print-resource-dir)
 exports="c2s2c_abi_version c2s2c_strerror c2s2c_header_encode c2s2c_header_decode c2s2c_payload_validate c2s2c_packet_name \
-c2s2c_crc32c c2s2c_wasm_scratch c2s2c_wasm_scratch_size c2s2c_wasm_validate_schema c2s2c_wasm_validate \
+c2s2c_crc32c c2s2c_registry_count c2s2c_wasm_registry_get c2s2c_wasm_scratch c2s2c_wasm_scratch_size c2s2c_wasm_validate_schema c2s2c_wasm_validate \
 c2s2c_wasm_decode_header c2s2c_wasm_encode_header c2s2c_wasm_crc32c c2s2c_wasm_strerror"
 export_flags=""
 for e in $exports; do export_flags="$export_flags -Wl,--export=$e"; done

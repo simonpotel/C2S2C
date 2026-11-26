@@ -48,14 +48,14 @@ pub struct c2s2c_packet {
     pub reserved: u8,
 }
 
-/// Interface version this crate was written for: major 2, minor 0.
-pub const EXPECTED_ABI: u32 = 0x0002_0000;
+/// Interface version this crate was written for: major 1, minor 0.
+pub const EXPECTED_ABI: u32 = 0x0001_0000;
 
 pub const C2S2C_ERR_WOULD_BLOCK: c_int = -14;
 pub const C2S2C_SYS_CONNECTED: u16 = 0x7F01;
 pub const C2S2C_SYS_DISCONNECTED: u16 = 0x7F02;
 
-extern "C" {
+unsafe extern "C" {
     pub fn c2s2c_strerror(err: c_int) -> *const c_char;
     pub fn c2s2c_abi_version() -> u32;
     pub fn c2s2c_config_default(cfg: *mut c2s2c_config);

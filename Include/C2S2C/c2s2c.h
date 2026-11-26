@@ -110,6 +110,18 @@ C2S2C_API int c2s2c_payload_validate(uint16_t packet_id, const uint8_t* in, uint
 /** Name of a registered packet (e.g. "chat_message"), or NULL if unknown. Static string. */
 C2S2C_API const char* c2s2c_packet_name(uint16_t packet_id);
 
+/** Number of packets in the registry compiled into this library. */
+C2S2C_API uint32_t c2s2c_registry_count(void);
+
+/**
+ * Describes registry entry @p index (0 .. c2s2c_registry_count() - 1), so bindings can build
+ * their packet tables from the library instead of a copy: id, name ("chat_message") and layout
+ * (the field types in order, "u32,string,u64"; empty for no field). Strings are static.
+ * @return C2S2C_OK or C2S2C_ERR_INVALID_ARG (index out of range or NULL output pointer).
+ */
+C2S2C_API int c2s2c_registry_get(uint32_t index, uint16_t* id, const char** name,
+                                 const char** layout);
+
 /* Runtime: one context = one event loop owning sockets and buffers.
  * Threading: a context must be used by ONE thread at a time (its owner). Several contexts may
  * run in parallel in different threads. Typical loop:

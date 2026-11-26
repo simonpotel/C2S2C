@@ -4,7 +4,7 @@
 // Usage: chat_client.ts <port> <nickname> <message>...
 // Logs in, sends each message, prints the broadcasts it receives until its own messages came back.
 import { Context, encode } from "../../../Bindings/Node/Source/index.ts";
-import * as reg from "../../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../../Bindings/Node/Source/index.ts";
 
 const [port, nickname, ...messages] = process.argv.slice(2);
 if (!port || !nickname || messages.length === 0) {

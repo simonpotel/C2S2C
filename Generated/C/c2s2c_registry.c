@@ -12,14 +12,14 @@ static const c2s2c_field c2s2c_f_user_list[] = {{C2S2C_T_ARRAY, C2S2C_T_STRING}}
 static const c2s2c_field c2s2c_f_download[] = {{C2S2C_T_BYTES, 0}};
 
 const c2s2c_packet_info c2s2c_registry[] = {
-    {0x0001u, "login", 0, {1, c2s2c_f_login}},
-    {0x0002u, "chat_send", 0, {1, c2s2c_f_chat_send}},
-    {0x0003u, "ping", 0, {1, c2s2c_f_ping}},
-    {0x0004u, "upload", 0, {1, c2s2c_f_upload}},
-    {0x8001u, "login_ok", 0, {1, c2s2c_f_login_ok}},
-    {0x8002u, "chat_message", 0, {3, c2s2c_f_chat_message}},
-    {0x8003u, "pong", 0, {1, c2s2c_f_pong}},
-    {0x8004u, "user_list", 0, {1, c2s2c_f_user_list}},
-    {0x8005u, "download", 0, {1, c2s2c_f_download}},
+    {0x0001u, "login", "string", 0, {1, c2s2c_f_login}},
+    {0x0002u, "chat_send", "string", 0, {1, c2s2c_f_chat_send}},
+    {0x0003u, "ping", "u32", 0, {1, c2s2c_f_ping}},
+    {0x0004u, "upload", "bytes", 0, {1, c2s2c_f_upload}},
+    {0x8001u, "login_ok", "u32", 0, {1, c2s2c_f_login_ok}},
+    {0x8002u, "chat_message", "u32,string,u64", 0, {3, c2s2c_f_chat_message}},
+    {0x8003u, "pong", "u32", 0, {1, c2s2c_f_pong}},
+    {0x8004u, "user_list", "array<string>", 0, {1, c2s2c_f_user_list}},
+    {0x8005u, "download", "bytes", 0, {1, c2s2c_f_download}},
 };
-const unsigned c2s2c_registry_count = 9;
+const unsigned c2s2c_registry_size = 9;

@@ -5,7 +5,7 @@
 // server's login_ok / chat_message. The page is served by Examples/Web/Gateway/gateway.ts.
 import { WebClient } from "../../../Bindings/Wasm/Source/c2s2c_web.ts";
 import { loadCodec } from "../../../Bindings/Wasm/Source/c2s2c_wasm.ts";
-import * as reg from "../../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../../Bindings/Node/Source/codec.ts"; // filled by loadCodec
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement & HTMLInputElement;
 const log = (text: string) => {

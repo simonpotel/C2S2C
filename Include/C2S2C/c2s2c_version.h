@@ -7,7 +7,7 @@
  * check it at load time); the protocol version changes when the bytes on the wire change. */
 
 /** ABI version: (major << 16) | (minor << 8) | patch. Bump on any public layout change. */
-#define C2S2C_ABI_VERSION 0x00020000u
+#define C2S2C_ABI_VERSION 0x00010000u
 #define C2S2C_PROTOCOL_VERSION 1
 
 #endif

@@ -18,7 +18,7 @@ import type { C2S2C } from "node:stream";
 const root = path.resolve(import.meta.dirname, "../../..");
 const upstreamPort = Number(process.argv[2]);
 const wasmFile = process.env.C2S2C_WASM ?? path.join(root, "Build/Wasm/c2s2c_codec.wasm");
-const PUBLIC_FOLDERS = ["Examples/Web/Chat/", "Bindings/", "Generated/TypeScript/"];
+const PUBLIC_FOLDERS = ["Examples/Web/Chat/", "Bindings/"];
 const TYPES: Record<string, string> = { ".html": "text/html", ".ts": "text/javascript", ".js": "text/javascript", ".wasm": "application/wasm" };
 
 const server = http.createServer((req, res) => {

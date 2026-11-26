@@ -1,6 +1,6 @@
 {
   "name": "c2s2c",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Node.js / TypeScript binding of the C2S2C packet library (N-API)",
   "type": "module",
   "main": "Source/index.ts",

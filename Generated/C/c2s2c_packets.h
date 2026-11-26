@@ -19,11 +19,12 @@
 typedef struct c2s2c_packet_info {
     uint16_t id;
     const char* name;
-    int deprecated; /* 1 = retired id: still valid, do not use in new code */
+    const char* layout; /* field types, e.g. "u32,string,u64" (what c2s2c_registry_get returns) */
+    int deprecated;     /* 1 = retired id: still valid, do not use in new code */
     c2s2c_schema schema;
 } c2s2c_packet_info;
 
 extern const c2s2c_packet_info c2s2c_registry[];
-extern const unsigned c2s2c_registry_count;
+extern const unsigned c2s2c_registry_size;
 
 #endif

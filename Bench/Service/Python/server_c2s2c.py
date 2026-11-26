@@ -4,7 +4,7 @@ run over the same batched poll. SPDX-License-Identifier: MIT"""
 import sys
 
 import c2s2c
-import c2s2c_registry as reg
+from c2s2c import packets as reg
 
 ctx = c2s2c.Context(max_conns=4096, max_payload=1024, idle_timeout_ms=1000)
 ctx.listen("127.0.0.1", 0)

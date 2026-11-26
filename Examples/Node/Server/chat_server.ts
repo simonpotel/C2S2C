@@ -4,7 +4,7 @@
 // Same protocol and command line as the C version. Usage: chat_server.ts [port]
 // The chosen port is printed on the first line.
 import { Context, encode } from "../../../Bindings/Node/Source/index.ts";
-import * as reg from "../../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../../Bindings/Node/Source/index.ts";
 
 const ctx = new Context();
 ctx.listen("127.0.0.1", Number(process.argv[2] ?? 0));

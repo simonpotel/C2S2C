@@ -13,11 +13,14 @@
 - Files MUST be `snake_case`; only conventional root files are upper-case (`README.md`,
   `AGENTS.md`, `DOCUMENTATION.md`, `LICENSE`, `CMakeLists.txt`). `check_naming.sh` MUST pass.
 - Public symbols MUST be prefixed `c2s2c_`, macros/constants `C2S2C_`. MUST NEVER use a `_t` suffix.
-- Documentation is `README.md` (under two minutes to read) and `DOCUMENTATION.md`; nothing else.
+- Documentation is `README.md` (under two minutes to read), `DOCUMENTATION.md`, and `USE.md` (how an
+  agent integrates C2S2C in another project); nothing else.
+- Bindings MUST NOT copy what the library knows: packet tables come from `c2s2c_registry_get`,
+  error messages from `c2s2c_strerror` (only compiled languages get generated constants).
 - Examples exist only in Rust, Python and Node (plus the web chat).
 
 ## Language and build
-- C11 strict, warning-free with `-Wall -Wextra -Wpedantic -Werror -Wconversion -Wshadow
+- C23 strict, warning-free with `-Wall -Wextra -Wpedantic -Werror -Wconversion -Wshadow
   -Wcast-align -Wstrict-prototypes`. ASan, UBSan and TSan MUST pass.
 - `Source/` MUST NOT have external dependencies, allocate outside `Ctx/context.c`, or print
   (`check_source_rules.sh`).

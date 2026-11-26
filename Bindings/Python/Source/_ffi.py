@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Version of the C interface this binding was written for: (major, minor).
-EXPECTED_ABI = (2, 0)  # minimum minor version: later minors only add functions
+EXPECTED_ABI = (1, 0)  # minimum minor version: later minors only add functions
 
 
 def _candidates():
@@ -90,3 +90,6 @@ def declare(lib):
     sig("c2s2c_send_batch", c_int, Ctx, ctypes.POINTER(Outgoing), c_int)
     sig("c2s2c_flush", c_int, Ctx)
     sig("c2s2c_payload_validate", c_int, u16, ctypes.c_char_p, u32)
+    sig("c2s2c_registry_count", u32)
+    sig("c2s2c_registry_get", c_int, u32, ctypes.POINTER(u16), ctypes.POINTER(ctypes.c_char_p),
+        ctypes.POINTER(ctypes.c_char_p))

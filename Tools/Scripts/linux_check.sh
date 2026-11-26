@@ -8,8 +8,11 @@ presets=${*:-debug asan tsan}
 # The toolchain image is built once and cached by Docker, so later runs start immediately.
 docker build -q -t c2s2c-linux-check - <<'DOCKERFILE' >/dev/null || exit 1
 FROM ubuntu:24.04
-RUN apt-get update -qq && apt-get install -y -qq build-essential cmake ninja-build python3 rustc cargo \
+RUN apt-get update -qq && apt-get install -y -qq build-essential cmake ninja-build python3 curl \
     && rm -rf /var/lib/apt/lists/*
+# Current Rust from rustup: the distribution's rustc is too old for edition 2024.
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
 DOCKERFILE
 
 # The source is mounted read-only and copied, so Linux builds never touch the host's Build/.

@@ -1,0 +1,79 @@
+name: release
+
+# Pushing a tag such as v1.0.0 builds the library on every platform, runs its tests, and publishes
+# a GitHub release with one archive per platform: c2s2c-<version>-<platform>.tar.gz.
+# Each archive is the CMake install tree (headers, shared and static libraries, packet registry,
+# pkg-config file, README): language-neutral, usable from any language that can call C.
+# "Run workflow" (manual) builds and uploads the archives as artifacts without publishing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    platform: linux-x64 }
+          - { os: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { os: macos-latest,     platform: macos-arm64 }
+          - { os: macos-15-intel,   platform: macos-x64 }
+          - { os: windows-latest,   platform: windows-x64,   arch: x64 }
+          - { os: windows-11-arm,   platform: windows-arm64, arch: arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Compiler (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with: { arch: "${{ matrix.arch }}" }
+      - name: Ninja and clang (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pip install ninja
+          echo "CC=clang" >> "$GITHUB_ENV"
+      - name: Build and test
+        shell: bash
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+          ctest --preset release -L "Unit|Vectors|Property|Integration|Memory"
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_TYPE" = tag ] || version="dev-${GITHUB_SHA::7}"
+          name="c2s2c-${version}-${{ matrix.platform }}"
+          cmake --install Build/release --prefix "dist/$name"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          echo "ARCHIVE=dist/$name.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c2s2c-${{ matrix.platform }}
+          path: ${{ env.ARCHIVE }}
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { path: dist, merge-multiple: true }
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz --repo "$GITHUB_REPOSITORY" \
+            --title "C2S2C $GITHUB_REF_NAME" --generate-notes

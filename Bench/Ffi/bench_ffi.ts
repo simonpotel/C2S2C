@@ -1,7 +1,7 @@
 // bench_ffi.ts - cost of the Node binding: pipelined ping/pong round trips per second.
 // SPDX-License-Identifier: MIT
 import { Context, encode } from "../../Bindings/Node/Source/index.ts";
-import * as reg from "../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../Bindings/Node/Source/index.ts";
 
 const server = new Context();
 const client = new Context();

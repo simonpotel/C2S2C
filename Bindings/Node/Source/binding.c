@@ -254,6 +254,30 @@ static napi_value js_release(napi_env env, napi_callback_info info)
     return NULL;
 }
 
+/* registry() -> [[id, name, layout], ...]: the packet table compiled into the library. */
+static napi_value js_registry(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    uint32_t n = c2s2c_registry_count();
+    napi_value list;
+    CALL(env, napi_create_array_with_length(env, n, &list));
+    for (uint32_t i = 0; i < n; i++) {
+        uint16_t id;
+        const char *name, *layout;
+        napi_value entry, v;
+        if (c2s2c_registry_get(i, &id, &name, &layout) != C2S2C_OK) break;
+        CALL(env, napi_create_array_with_length(env, 3, &entry));
+        CALL(env, napi_create_uint32(env, id, &v));
+        CALL(env, napi_set_element(env, entry, 0, v));
+        CALL(env, napi_create_string_utf8(env, name, NAPI_AUTO_LENGTH, &v));
+        CALL(env, napi_set_element(env, entry, 1, v));
+        CALL(env, napi_create_string_utf8(env, layout, NAPI_AUTO_LENGTH, &v));
+        CALL(env, napi_set_element(env, entry, 2, v));
+        CALL(env, napi_set_element(env, list, i, entry));
+    }
+    return list;
+}
+
 static napi_value js_strerror(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -278,19 +302,13 @@ NAPI_MODULE_INIT()
     static const struct {
         const char* name;
         napi_callback fn;
-    } functions[] = {{"create", js_create},
-                     {"destroy", js_destroy},
-                     {"listen", js_listen},
-                     {"connect", js_connect},
-                     {"port", js_port},
-                     {"close", js_close},
-                     {"send", js_send},
-                     {"sendBatch", js_send_batch},
-                     {"flush", js_flush},
-                     {"poll", js_poll},
-                     {"release", js_release},
-                     {"strerror", js_strerror},
-                     {"abiVersion", js_abi_version}};
+    } functions[] = {{"create", js_create},     {"destroy", js_destroy},
+                     {"listen", js_listen},     {"connect", js_connect},
+                     {"port", js_port},         {"close", js_close},
+                     {"send", js_send},         {"sendBatch", js_send_batch},
+                     {"flush", js_flush},       {"poll", js_poll},
+                     {"release", js_release},   {"strerror", js_strerror},
+                     {"registry", js_registry}, {"abiVersion", js_abi_version}};
     for (size_t i = 0; i < sizeof functions / sizeof functions[0]; i++) {
         napi_value fn;
         if (napi_create_function(env, functions[i].name, NAPI_AUTO_LENGTH, functions[i].fn, NULL,

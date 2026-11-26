@@ -23,6 +23,8 @@ c2s2c_r_u32
 c2s2c_r_u64
 c2s2c_r_u8
 c2s2c_reader_init
+c2s2c_registry_count
+c2s2c_registry_get
 c2s2c_release
 c2s2c_send
 c2s2c_send_batch

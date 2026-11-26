@@ -9,8 +9,8 @@
 /* The generated table must be strictly sorted (binary search relies on it) with unique names. */
 static void test_table_shape(void)
 {
-    CHECK(c2s2c_registry_count > 0);
-    for (unsigned i = 1; i < c2s2c_registry_count; i++) {
+    CHECK(c2s2c_registry_size > 0);
+    for (unsigned i = 1; i < c2s2c_registry_size; i++) {
         CHECK(c2s2c_registry[i - 1].id < c2s2c_registry[i].id);
         for (unsigned j = 0; j < i; j++)
             CHECK(strcmp(c2s2c_registry[i].name, c2s2c_registry[j].name) != 0);
@@ -23,7 +23,7 @@ static void test_table_shape(void)
 /* Every registered id is found by name; unknown ids (just around the known ones) are not. */
 static void test_lookup(void)
 {
-    for (unsigned i = 0; i < c2s2c_registry_count; i++)
+    for (unsigned i = 0; i < c2s2c_registry_size; i++)
         CHECK(strcmp(c2s2c_packet_name(c2s2c_registry[i].id), c2s2c_registry[i].name) == 0);
     CHECK(strcmp(c2s2c_packet_name(C2S2C_PKT_CHAT_MESSAGE), "chat_message") == 0);
     CHECK(c2s2c_packet_name(0x0000) == NULL && c2s2c_packet_name(0x0006) == NULL);

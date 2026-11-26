@@ -4,7 +4,7 @@
 // The browser has no sockets we can use directly, but it can run the very same C
 // code that checks headers, payloads (UTF-8 included) and checksums on the server. This wrapper
 // loads that module and exposes it as functions on Uint8Array. Nothing here touches the network.
-import { C2S2CError } from "../../Node/Source/codec.ts";
+import { C2S2CError, useLibrary } from "../../Node/Source/codec.ts";
 
 export const HEADER_SIZE = 14;
 const STOC_FLAG = 1;
@@ -103,5 +103,12 @@ export async function loadCodec(wasm: BufferSource): Promise<Codec> {
       return out;
     },
   };
+  // The packet table and the error messages come from the module itself, not from a copy.
+  const entries: [number, string, string][] = [];
+  for (let i = 0; i < e.c2s2c_registry_count(); i++) {
+    const [id, name, layout = ""] = new TextDecoder().decode(bytes().slice(0, e.c2s2c_wasm_registry_get(i))).split(" ");
+    entries.push([parseInt(id, 16), name, layout]);
+  }
+  useLibrary(entries, codec.strerror);
   return codec;
 }

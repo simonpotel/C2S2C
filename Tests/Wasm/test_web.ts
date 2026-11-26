@@ -10,7 +10,7 @@ import http from "node:http";
 import { test } from "node:test";
 import { WebClient } from "../../Bindings/Wasm/Source/c2s2c_web.ts";
 import { loadCodec } from "../../Bindings/Wasm/Source/c2s2c_wasm.ts";
-import * as reg from "../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../Bindings/Node/Source/codec.ts"; // filled by loadCodec
 
 /** Starts a program and resolves with the first line it prints (its port). */
 function start(cmd: string, args: string[], children: ChildProcess[]): Promise<number> {
@@ -53,7 +53,7 @@ test("web client chats through the gateway, and the page is served", async (t) =
     assert.doesNotMatch(code, /\bas HTMLElement\b|\(\w+: (string|number)\b|\binterface \w+ \{/, `TypeScript syntax left in ${url}`);
     for (const m of code.matchAll(/(?:from|import\()\s*"(\.[^"]+)"/g)) queue.push(new URL(m[1], url).href);
   }
-  assert.ok(seen.size >= 5, `followed ${seen.size} modules`);
+  assert.ok(seen.size >= 4, `followed ${seen.size} modules`); // page, client, WebAssembly wrapper, codec
   assert.equal((await fetch(`${base}/etc/passwd`)).status, 404);
   // Paths that try to leave the allowed folders. fetch() would tidy "/../" away, so use a raw request.
   for (const evil of ["/Bindings/../AGENTS.md", "/Bindings/%2e%2e/AGENTS.md", "/Source/Core/header.c"]) {

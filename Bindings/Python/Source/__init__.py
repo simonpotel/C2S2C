@@ -7,6 +7,7 @@ from the layouts in the packet registry. Errors are raised as ``c2s2c.Error``.
 """
 import ctypes
 import struct
+import types
 import weakref
 
 from . import _ffi
@@ -14,7 +15,7 @@ from . import _ffi
 _lib = _ffi.load()
 _ffi.declare(_lib)
 
-__all__ = ["Context", "Error", "Packet", "encode", "decode", "SYS_CONNECTED", "SYS_DISCONNECTED"]
+__all__ = ["Context", "Error", "Packet", "encode", "decode", "packets", "SYS_CONNECTED", "SYS_DISCONNECTED"]
 
 SYS_CONNECTED = 0x7F01
 SYS_DISCONNECTED = 0x7F02
@@ -41,16 +42,28 @@ _FIXED = {"u8": "B", "u16": "H", "u32": "I", "u64": "Q", "i8": "b", "i16": "h", 
           "i64": "q", "f32": "f", "f64": "d", "bool": "?"}
 
 
-def _registry():
-    import c2s2c_registry  # generated from Registry/protocol.toml
-    return c2s2c_registry
+def _load_registry():
+    """Reads the packet table compiled into the library: id -> (name, layout)."""
+    table = {}
+    pid, name, layout = ctypes.c_uint16(), ctypes.c_char_p(), ctypes.c_char_p()
+    for i in range(_lib.c2s2c_registry_count()):
+        _check(_lib.c2s2c_registry_get(i, ctypes.byref(pid), ctypes.byref(name), ctypes.byref(layout)))
+        table[pid.value] = (name.value.decode(), layout.value.decode())
+    return table
+
+
+_PACKETS = _load_registry()
+
+# Packet ids by name, built from the library: packets.PING, packets.CHAT_MESSAGE...
+packets = types.SimpleNamespace(**{name.upper(): pid for pid, (name, _) in _PACKETS.items()})
 
 
 def _schema(packet_id):
     try:
-        return _registry().PACKETS[packet_id][1].split(",") if _registry().PACKETS[packet_id][1] else []
+        layout = _PACKETS[packet_id][1]
     except KeyError:
         raise Error(-13)  # C2S2C_ERR_UNKNOWN_ID
+    return layout.split(",") if layout else []
 
 
 def _write_value(out, kind, value):

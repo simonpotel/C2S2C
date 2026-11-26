@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { C2S2CError, ERROR_MESSAGES } from "../../Bindings/Node/Source/codec.ts";
+import { C2S2CError } from "../../Bindings/Node/Source/codec.ts";
 import { loadCodec } from "../../Bindings/Wasm/Source/c2s2c_wasm.ts";
-import * as reg from "../../Generated/TypeScript/registry.ts";
+import { packets as reg } from "../../Bindings/Node/Source/codec.ts"; // filled by loadCodec
 
 const root = path.resolve(import.meta.dirname, "../..");
 const codec = await loadCodec(fs.readFileSync(process.env.C2S2C_WASM as string));
@@ -17,8 +17,10 @@ const codes: Record<string, number> = {};
 for (const m of fs.readFileSync(path.join(root, "Include/C2S2C/c2s2c_errors.h"), "utf8").matchAll(/#define (C2S2C_\w+)\s+\(?(-?\d+)\)?/g)) codes[m[1]] = Number(m[2]);
 
 test("the module loads and reports the library version", () => {
-  assert.equal(codec.abiVersion() >> 16, 2);
-  for (const code of Object.keys(ERROR_MESSAGES).map(Number)) assert.equal(codec.strerror(code), ERROR_MESSAGES[code]);
+  assert.equal(codec.abiVersion() >> 16, 1);
+  assert.equal(codec.strerror(-20), "invalid connection");
+  assert.equal(new C2S2CError(-3).message, "bad magic"); // messages come from the module
+  assert.deepEqual([reg.PING, reg.PONG, reg.USER_LIST], [0x0003, 0x8003, 0x8004]); // so does the table
 });
 
 // The same .bin/.json pairs that the C, Python, Rust and Node tests use.

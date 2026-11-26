@@ -9,7 +9,7 @@ several languages.
 ## In two minutes
 
 ```bash
-cmake --preset debug && cmake --build --preset debug      # needs CMake ≥ 3.20, Ninja, a C11 compiler
+cmake --preset debug && cmake --build --preset debug      # needs CMake ≥ 3.25, Ninja, a C23 compiler
 ctest --preset debug                                      # all tests available on this machine
 ```
 
@@ -110,11 +110,14 @@ uint16_t n; const char* s = c2s2c_r_string(&r, &n);   /* points into buf, not NU
 ## The packet registry
 
 `Registry/protocol.toml` is the **only** place packets are defined (name, id, fields). The script
-`Tools/Codegen/gen_registry.py` (Python 3.11+, no dependency) turns it into ready-made tables
-for every language, one folder each: `Generated/C`, `Generated/Cpp`, `Generated/Python`,
-`Generated/Rust`, `Generated/TypeScript`, plus the language-neutral listing
+`Tools/Codegen/gen_registry.py` (Python 3.11+, no dependency) compiles it into the library
+(`Generated/C`) and generates constants for the compiled languages, which need them at compile
+time (`Generated/Cpp`, `Generated/Rust`), plus the language-neutral listing
 `Generated/registry.txt` (`0x8002 chat_message u32,string,u64`, one packet per line).
-Never edit `Generated/` by hand; edit the TOML, then run the script.
+Python, Node and browsers copy nothing: they read the table from the library when they load it
+(`c2s2c_registry_count`, `c2s2c_registry_get`), so they can never disagree with it. Error
+messages come from the library too (`c2s2c_strerror`). Never edit `Generated/` by hand; edit
+the TOML, then run the script.
 
 ```toml
 [[packet]]
@@ -215,12 +218,13 @@ In every binding, handlers and hooks run in the language over batched polls (see
 **Web chat:** `Examples/Web/Gateway/gateway.ts <server port>` serves `Examples/Web/Chat/index.html`
 and relays WebSockets to a C2S2C TCP server (a browser cannot open raw TCP); it turns the page's
 TypeScript into JavaScript on the fly and serves only `Examples/Web/Chat`, `Bindings` and
-`Generated/TypeScript`. Start any chat server, then the gateway, then open the printed URL:
+its own files. Start any chat server, then the gateway, then open the printed URL:
 `chat_server` prints its port; `gateway.ts <port>` prints the http port; set `C2S2C_WASM` to the
 `.wasm` if it is not under `Build/Wasm`.
 
 ```python
-import c2s2c, c2s2c_registry as reg
+import c2s2c
+from c2s2c import packets as reg
 ctx = c2s2c.Context(); ctx.listen("127.0.0.1", 0)
 ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, p.payload()))
 while True: ctx.dispatch(200)
@@ -301,6 +305,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `c2s2c_reader_init`, `c2s2c_r_u8/u16/u32/u64/f32/f64/string/bytes` | read fields, bounds-checked; strings/bytes point into the input |
 | `c2s2c_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
 | `c2s2c_payload_validate(id, in, len)` | same, using the registry layout of packet `id`; `C2S2C_ERR_UNKNOWN_ID` if not registered |
+| `c2s2c_registry_count()`, `c2s2c_registry_get(i, &id, &name, &layout)` | the packet table compiled into the library (what the bindings load) |
 | `c2s2c_packet_name(id)` | registered name (for logs), or NULL |
 | `c2s2c_create` / `c2s2c_destroy` / `c2s2c_config_default` | make and free a context; settings |
 | `c2s2c_listen`, `c2s2c_listen_port`, `c2s2c_connect` | start a server, read its port, start a client |
@@ -312,6 +317,17 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `c2s2c_abi_version()` | version of the loaded library |
 
 ## Platforms and CI
+
+**Languages and tools:** the library is C23 (built with `-std=c23`, or `c2x` on older compilers),
+the C++ binding needs C++17 and is tested in C++23, the Rust crates use edition 2024, CI uses
+Python 3.15 and Node 26 (the bindings work from Python 3.9 and Node 22.6), CMake ≥ 3.25.
+
+**Releases:** pushing a tag `v*` runs `.github/workflows/release.yml`: build and tests on the six
+platforms, then a GitHub release with `c2s2c-<version>-<platform>.tar.gz` for each. An archive is
+the CMake install tree (`cmake --install`): `include/`, `lib/` (`bin/` on Windows),
+`lib/pkgconfig/c2s2c.pc`, `share/c2s2c/` (`protocol.toml`, `registry.txt`, `README.md`,
+`LICENSE`). Nothing in it is specific to one language.
+
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
 

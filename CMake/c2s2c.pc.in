@@ -1,0 +1,9 @@
+prefix=${pcfiledir}/../..
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: c2s2c
+Description: Typed client/server packets over TCP: framing, validation, batched I/O
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lc2s2c
+Cflags: -I${includedir}
