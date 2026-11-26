@@ -11,6 +11,21 @@
 **One packet-protocol engine in C, used from Rust, Python, Node and the browser, instead of
 rewriting it in every project.**
 
+**How it works:**
+
+![Encoding: binary, little-endian](https://img.shields.io/badge/Encoding-binary%2C%20little--endian-455A64?style=for-the-badge)
+![Framing: 14-byte header + length](https://img.shields.io/badge/Framing-14--byte%20header%20%2B%20length-455A64?style=for-the-badge)
+![Fields: ints · floats · bool · string · bytes · array](https://img.shields.io/badge/Fields-ints%20%C2%B7%20floats%20%C2%B7%20bool%20%C2%B7%20string%20%C2%B7%20bytes%20%C2%B7%20array-455A64?style=for-the-badge)
+![Text: strict UTF-8](https://img.shields.io/badge/Text-strict%20UTF--8-455A64?style=for-the-badge)
+![Schema: one TOML registry](https://img.shields.io/badge/Schema-one%20TOML%20registry-455A64?style=for-the-badge)
+![I/O: epoll · kqueue · io_uring · poll](https://img.shields.io/badge/I%2FO-epoll%20%C2%B7%20kqueue%20%C2%B7%20io__uring%20%C2%B7%20poll-1565C0?style=for-the-badge)
+![Delivery: batched · zero-copy](https://img.shields.io/badge/Delivery-batched%20%C2%B7%20zero--copy-1565C0?style=for-the-badge)
+![Writes: grouped per connection](https://img.shields.io/badge/Writes-grouped%20per%20connection-1565C0?style=for-the-badge)
+![Memory: no allocation at runtime](https://img.shields.io/badge/Memory-no%20allocation%20at%20runtime-1565C0?style=for-the-badge)
+![Flow control: back-pressure](https://img.shields.io/badge/Flow%20control-back--pressure-1565C0?style=for-the-badge)
+![Checksum: CRC-32C, SSE4.2 / ARMv8](https://img.shields.io/badge/Checksum-CRC--32C%2C%20SSE4.2%20%2F%20ARMv8-6A1B9A?style=for-the-badge)
+![Tested with: libFuzzer · ASan · UBSan · TSan](https://img.shields.io/badge/Tested%20with-libFuzzer%20%C2%B7%20ASan%20%C2%B7%20UBSan%20%C2%B7%20TSan-2E7D32?style=for-the-badge)
+
 ## The problem
 
 Every networked project ends up rewriting the same low-level code in its own language: cutting
