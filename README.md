@@ -1,5 +1,14 @@
 # Duplex
 
+![C11](https://img.shields.io/badge/C11-00599C?style=for-the-badge&logo=c&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
+![No dependencies](https://img.shields.io/badge/Dependencies-none-2EA44F?style=for-the-badge)
+![License MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
+
 **One packet-protocol engine in C, used from Rust, Python, Node and the browser, instead of
 rewriting it in every project.**
 
@@ -31,6 +40,20 @@ The same ping/pong service, written from scratch in each language versus on top 
 
 Python is faster with Duplex when it loops over batches (`poll` + `send_many`). A Python
 function called for every packet (`dispatch`) is slower than a hand-written loop (374 000/s).
+
+## Use cases
+
+Anywhere several programs exchange many small, typed messages over TCP and must not trust each
+other's bytes:
+
+| Use case | What travels | Why Duplex fits |
+|---|---|---|
+| **Multiplayer games** | player inputs to the server (CTOS), world state and events to players (STOC) | thousands of connections per process, batched receive, grouped sends, a C++/Rust game server and a browser client sharing one packet list |
+| **Chat and real-time apps** | messages, presence, notifications | strict UTF-8 checks on every string, idle peers dropped, the same protocol in the web page through WebAssembly |
+| **Microservices in several languages** | internal requests and events between Rust, Python and Node services | one registry instead of one hand-written encoder per language; a field added once reaches every service |
+| **Proxies and gateways** | the traffic of a client, relayed to the real server | `dx_tunnel` relays inside the library, drops chosen packet types, and slows the sender instead of buffering without limit |
+| **Telemetry and IoT ingestion** | small readings from many devices | fixed memory, no allocation while running, malformed device data rejected with a precise reason |
+| **Low-latency feeds** (market data, simulations, robotics) | frequent small updates | sub-millisecond round trips on loopback, one write per connection per batch |
 
 ## What is inside
 
