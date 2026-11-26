@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /*
- * In plain words: a circular area of memory where received packets are stored one after the
+ * A circular area of memory where received packets are stored one after the
  * other. The oldest is freed first (pop), the newest is added at the tail (push). A block is
  * always contiguous, so a packet can be handed out as one pointer + length. When a block does
  * not fit before the end of the area, the leftover bytes are skipped ("padding") and the block

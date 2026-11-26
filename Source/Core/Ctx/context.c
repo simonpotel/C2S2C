@@ -4,10 +4,9 @@
 #include <string.h>
 
 #include "dx_internal.h"
-#include "dx_packets.h"
 
 /*
- * In plain words: a context is one self-contained network engine. It reserves every byte of
+ * A context is one self-contained network engine. It reserves every byte of
  * memory it will ever need when it is created (connections, buffers, the ring of received
  * packets), then runs without allocating.
  */
@@ -84,7 +83,7 @@ static void release_all(dx_ctx* ctx)
     a->release(ctx->tx_mem, a->user);
     a->release(ctx->ring_mem, a->user);
     a->release(ctx->q, a->user);
-    a->release(ctx->handlers, a->user);
+    a->release(ctx->dirty, a->user);
     a->release(ctx->tunnels, a->user);
     a->release(ctx, a->user);
     dx_net_shutdown(); /* pairs with dx_net_init in dx_create */
@@ -122,10 +121,10 @@ dx_ctx* dx_create(const dx_config* user_cfg)
     ctx->tx_mem = a->alloc((size_t)tx_total, a->user);
     ctx->ring_mem = a->alloc(cfg.rx_ring_bytes, a->user);
     ctx->q = a->alloc(sizeof(dx_entry) * q_cap, a->user);
-    ctx->handlers = a->alloc(sizeof(dx_handler_slot) * (dx_registry_count + 1u), a->user);
+    ctx->dirty = a->alloc(sizeof(uint32_t) * cfg.max_conns, a->user);
     ctx->tunnels = a->alloc(sizeof(dx_tunnel_slot) * cfg.max_tunnels, a->user);
     ctx->io = ctx->conn_arr && ctx->rx_mem && ctx->tx_mem && ctx->ring_mem && ctx->q &&
-                      ctx->handlers && ctx->tunnels
+                      ctx->dirty && ctx->tunnels
                   ? ops->open(a, cfg.max_conns + 1u)
                   : NULL;
     if (!ctx->io) {
@@ -135,7 +134,6 @@ dx_ctx* dx_create(const dx_config* user_cfg)
 
     memset(ctx->conn_arr, 0, sizeof(dx_conn) * cfg.max_conns);
     memset(ctx->q, 0, sizeof(dx_entry) * q_cap);
-    memset(ctx->handlers, 0, sizeof(dx_handler_slot) * (dx_registry_count + 1u));
     memset(ctx->tunnels, 0, sizeof(dx_tunnel_slot) * cfg.max_tunnels);
     dx_pool_init(&ctx->conns, (uint8_t*)ctx->conn_arr, sizeof(dx_conn), cfg.max_conns);
     for (uint32_t i = 0; i < cfg.max_conns; i++)
@@ -148,6 +146,7 @@ dx_ctx* dx_create(const dx_config* user_cfg)
 void dx_destroy(dx_ctx* ctx)
 {
     if (!ctx) return;
+    dx_conn_flush_dirty(ctx); /* best effort: what the sockets accept right now */
     dx_conn_close_all(ctx);
     if (ctx->listen_fd >= 0) dx_net_close(ctx->listen_fd);
     release_all(ctx);

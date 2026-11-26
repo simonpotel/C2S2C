@@ -185,38 +185,27 @@ DX_API int dx_send_batch(dx_ctx* ctx, const dx_outgoing* pkts, int count);
  */
 DX_API int dx_close(dx_ctx* ctx, uint32_t conn);
 
-/* Handlers, hooks and tunnels: a push-style layer on top of dx_poll. All callbacks run in the
- * owner thread. Pointers they receive are valid only during the call (copy to keep). A callback
- * may call dx_send, dx_close, dx_connect and dx_on_packet, but never dx_destroy, and a
- * before_send hook must not call dx_send. */
-
-/** Installs hooks (copied; NULL removes them all). @return DX_OK or DX_ERR_INVALID_ARG. */
-DX_API int dx_set_hooks(dx_ctx* ctx, const dx_hooks* hooks);
+/**
+ * Writes what dx_send queued. dx_send only copies packets into the connection's buffer; the bytes
+ * leave at the next dx_poll (so a whole batch of replies goes out in one system call per
+ * connection), as soon as a buffer is half full, or when dx_flush is called. Call it when you send
+ * without polling right afterwards. @return DX_OK or DX_ERR_INVALID_ARG.
+ */
+DX_API int dx_flush(dx_ctx* ctx);
 
 /**
- * Registers @p fn for packets with @p packet_id (a registry id); NULL removes it. Use id 0 for
- * the default handler, called for packets that have no handler of their own.
- * @return DX_OK, DX_ERR_UNKNOWN_ID, or DX_ERR_INVALID_ARG.
+ * Relays packets between two connections of this context, both ways, inside the library: they
+ * never reach dx_poll. Typically a connection a client opened to us and the one we opened to the
+ * real server behind (one accepted, one outgoing). Packets whose id is one of the @p drop_count
+ * ids in @p drop_ids (at most DX_TUNNEL_MAX_DROP) are dropped. When one side's send buffer is
+ * full, reading from the other side pauses until it drains: nothing is lost and memory stays
+ * bounded. When either side disconnects the other is closed; both DX_SYS_DISCONNECTED events
+ * are still delivered.
+ * @return DX_OK, DX_ERR_BAD_CONN, DX_ERR_INVALID_ARG (same connection, both accepted or both
+ * outgoing, already relayed, too many ids) or DX_ERR_LIMIT (dx_config.max_tunnels reached).
  */
-DX_API int dx_on_packet(dx_ctx* ctx, uint16_t packet_id, dx_handler fn, void* user);
-
-/**
- * Like dx_poll, but calls hooks and handlers for what it receives, then releases the packets.
- * @return the number of entries processed (0 on timeout) or a negative error.
- */
-DX_API int dx_dispatch(dx_ctx* ctx, int timeout_ms);
-
-/**
- * Relays packets between two connections of this context, in both directions (for example a
- * client connection and the connection to the real server behind it). Each packet goes
- * through @p filter (may be NULL) and is re-sent on the other side with a fresh sequence number,
- * without reaching handlers. If the peer cannot keep up (its send buffer is full) both ends are
- * closed, so memory stays bounded. When either side disconnects the other is closed too.
- * Requires dx_dispatch. @return DX_OK, DX_ERR_BAD_CONN, DX_ERR_INVALID_ARG (same connection, or
- * already in a tunnel) or DX_ERR_LIMIT (dx_config.max_tunnels reached).
- */
-DX_API int dx_tunnel(dx_ctx* ctx, uint32_t first, uint32_t second, dx_tunnel_filter filter,
-                     void* user);
+DX_API int dx_tunnel(dx_ctx* ctx, uint32_t first, uint32_t second, const uint16_t* drop_ids,
+                     uint32_t drop_count);
 
 #ifdef __cplusplus
 }

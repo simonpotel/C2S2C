@@ -13,7 +13,7 @@ cmake --preset debug && cmake --build --preset debug      # needs CMake ≥ 3.20
 ctest --preset debug                                      # all tests available on this machine
 ```
 
-A packet server that answers `ping` with `pong` (full chat example: `Examples/C/Server`):
+A packet server that answers `ping` with `pong` (the full chat exists in Rust, Python and Node: `Examples/<Lang>/Server`):
 
 ```c
 #include <Duplex/duplex.h>
@@ -38,7 +38,8 @@ Where to go next:
 | know what is on the wire | [The header](#the-header-14-bytes-little-endian), [The payload](#the-payload) |
 | define my own packets | [The packet registry](#the-packet-registry) (`Registry/protocol.toml`) |
 | run a server or client in C | [Running a server and a client](#running-a-server-and-a-client) |
-| react with callbacks, filter, proxy | [Handlers, hooks and tunnels](#handlers-hooks-and-tunnels) |
+| know what the library does and what the bindings do | [Library or binding?](#library-or-binding) |
+| prove it beats recoding the protocol | [Service benchmark](#service-benchmark) |
 | use another language | [Using it from other languages](#using-it-from-other-languages) |
 | see speed and tests | [Checksum and performance](#checksum-and-performance), [Tests](#tests) |
 
@@ -154,9 +155,10 @@ for (;;) {
   If you never release, the ring fills and reading pauses (back-pressure, nothing is lost).
 - **Roles:** the side that called `dx_listen` is the server (sends ids with bit 15 set, receives
   ids without it); the side that called `dx_connect` is the client. `dx_send` enforces it.
-- **Sending:** `dx_send` / `dx_send_batch` copy into a per-connection buffer and write what the
-  socket accepts; `DX_ERR_WOULD_BLOCK` means the buffer is full: poll, then retry. Sequence
-  numbers are added by the library.
+- **Sending:** `dx_send` / `dx_send_batch` copy into a per-connection buffer; the bytes leave at
+  the next `dx_poll` (one write per connection for a whole batch of replies), when a buffer is
+  half full, or on `dx_flush`. `DX_ERR_WOULD_BLOCK` means the buffer is full: poll, then retry.
+  Sequence numbers are added by the library.
 - **Bad traffic:** invalid headers, payloads, wrong direction or sequence, oversized lengths, or a
   peer silent for `idle_timeout_ms` close that connection only; `DX_SYS_DISCONNECTED` carries the
   reason (`DX_ERR_*`, 0 for a normal close). Unknown/mid-packet hang-ups are reported too.
@@ -165,20 +167,23 @@ for (;;) {
   `max_tunnels`, optional allocator. Memory is about `max_conns × (max_payload + tx_bytes)` +
   `rx_ring_bytes`, reserved once at `dx_create`.
 
-## Handlers, hooks and tunnels
+## Library or binding?
 
-A push-style layer on top of `dx_poll`: call `dx_dispatch(ctx, timeout)` in your loop instead.
+The library is the **data path**, written once and shared by every language: framing, strict
+validation, sequence and direction checks, buffers reserved up front, batched `dx_poll`, writes
+grouped per connection, and one feature that runs entirely inside it, the relay:
 
-| Feature | What it does |
+| In the library (C) | What it does |
 |---|---|
-| `dx_on_packet(ctx, id, fn, user)` | `fn` runs for each received packet with that id (id 0 = default handler) |
-| `dx_set_hooks(ctx, &hooks)` | `on_connect`, `on_disconnect`, `on_error` observe; `before_send` and `after_recv` can **reject** a packet (non-zero) |
-| `dx_tunnel(ctx, a, b, filter, user)` | relays packets between two connections (a proxy); `filter` can drop some; a peer that cannot keep up is disconnected |
+| `dx_poll` / `dx_release` | hand out a whole batch of packets per call (one crossing from another language per batch) |
+| `dx_send`, `dx_send_batch`, `dx_flush` | queue packets; they leave grouped at the next poll |
+| `dx_tunnel(ctx, a, b, drop_ids, n)` | relay two connections both ways without the application (a proxy), dropping the listed packet ids; a slow side pauses the other instead of buffering (`Tests/Integration/test_tunnel.c`) |
 
-Callbacks run in the owner thread; the packet they get is valid only during the call (copy it to
-keep it). They may call `dx_send`, `dx_close`, `dx_connect`; never `dx_destroy`. A `before_send`
-hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + a hook) and
-`Tests/Integration/test_hooks.c` (hooks, filtering proxy).
+**Handlers and hooks live in the bindings** (`on_packet`, `set_hooks` with `on_connect`,
+`on_disconnect`, `on_error`, `before_send`, `after_recv`, and `dispatch`), written in each
+language over one batched poll. Why: a callback from C into Python, Rust or JavaScript crosses the
+language boundary for every packet, which is exactly the cost batching removes. The C library
+never calls back into the application.
 
 ## I/O backends
 
@@ -195,15 +200,16 @@ hook must not call `dx_send`. See `Examples/C/Server/chat_server.c` (handlers + 
 
 All bindings wrap the same C library and share the packet ids from `Generated/<Lang>/`. Each has
 the same chat example (`Examples/<Lang>/Server|Client`, same command line, same output), and the
-**cross-language** tests run every client against every server.
+**cross-language** tests run every client against every server (Rust, Python, Node: 3×3).
+In every binding, handlers and hooks run in the language over batched polls (see above).
 
 | Language | Where | How |
 |---|---|---|
 | C | `Include/Duplex/duplex.h` + `Generated/C/dx_packets.h` | link `libduplex` |
-| C++17 | `Bindings/Cpp/duplex.hpp` (header only) | `duplex::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `duplex::Error`, handlers/hooks are lambdas; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
-| Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (packet data is a zero-copy view that raises after release), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
-| Rust | `Bindings/Rust` (crates `duplex-sys` = raw FFI, `duplex` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, duplex::Error>`; handlers/hooks are closures. Build with `DUPLEX_LIB_DIR=<folder of libduplex> cargo build` from `Bindings/Rust` |
-| Node ≥ 22.6 / TypeScript | `Bindings/Node` (N-API addon `Source/binding.c`, API in `Source/index.ts`, types in `index.d.ts`) | `Context`; `poll()` returns a `Batch` whose payloads are zero-copy `Uint8Array`s that are **detached** (length 0) on `batch.release()`; `dispatch()` runs handlers/hooks and releases for you; errors are `DuplexError`; `encode/decode` follow the registry (u64 as `bigint`). Node runs the `.ts` files directly (type stripping). Handlers and hooks run in the JS layer; `dx_tunnel` is C-only |
+| C++17 | `Bindings/Cpp/duplex.hpp` (header only) | `duplex::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `duplex::Error`, handlers/hooks are lambdas, `flush()`; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
+| Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (`p.data` is a zero-copy view that raises after release, `p.payload()` a copy), `ctx.send_many([...])` answers a whole batch in one call (a received packet can be echoed without copying), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
+| Rust | `Bindings/Rust` (crates `duplex-sys` = raw FFI, `duplex` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, duplex::Error>`; handlers/hooks are closures; `flush()`. Build with `DUPLEX_LIB_DIR=<folder of libduplex> cargo build` from `Bindings/Rust` |
+| Node ≥ 22.6 / TypeScript | `Bindings/Node` (N-API addon `Source/binding.c`, API in `Source/index.ts`, types in `index.d.ts`) | `Context`; `poll()` returns a `Batch` (one native call per batch: packet table + one payload buffer) whose packets throw after `batch.release()`; `sendMany([...])` answers a batch in one call; `dispatch()` runs handlers/hooks and releases for you; errors are `DuplexError`; `encode/decode` follow the registry (u64 as `bigint`). Node runs the `.ts` files directly (type stripping). `dx_tunnel` is C-only |
 | Browser (WebAssembly) | `Bindings/Wasm` (`build.sh`, `Source/duplex_wasm.ts`, `Source/duplex_web.ts`) | the codec (headers, payload and UTF-8 validation, registry, CRC-32C) compiled to a ~6 KB `.wasm` with plain clang `--target=wasm32` + `wasm-ld` (no Emscripten): `loadCodec(bytes)` then `WebClient.connect(wsUrl, codec)`; each WebSocket message is exactly one Duplex frame; no sockets, no event loop in the browser build |
 
 **Web chat:** `Examples/Web/Gateway/gateway.ts <server port>` serves `Examples/Web/Chat/index.html`
@@ -216,7 +222,7 @@ TypeScript into JavaScript on the fly and serves only `Examples/Web/Chat`, `Bind
 ```python
 import duplex, duplex_registry as reg
 ctx = duplex.Context(); ctx.listen("127.0.0.1", 0)
-ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, bytes(p.data)))
+ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, p.payload()))
 while True: ctx.dispatch(200)
 ```
 
@@ -239,7 +245,43 @@ regression check only compares a machine with its own baseline):
 | CRC-32C, portable → hardware | 415 MB/s → 8300 MB/s (20×) |
 | round trip over loopback TCP | p50 13–46 µs, p99 70 µs–1.3 ms (varies run to run) |
 | pipelined round trips | about 384 000 per second |
-| cost through each binding (round trips/s, same scenario) | C++ 349k · Rust 348k · Node 166k · Python 111k |
+
+### Service benchmark
+
+Question: is it worth using the library rather than rewriting the protocol in each language?
+`Tools/Scripts/bench_service.sh Build/release` runs the same ping/pong service written three
+ways: on `libduplex` directly (C), **from scratch** in Rust, Python and Node (same checks as the
+library for that packet: header fields, direction, length limit, sequence, id, payload size, idle
+timeout), and **on each binding**. One C load generator (3 processes × 64 connections × 4 pings in
+flight) drives every server, then one C checker sends 17 kinds of hostile traffic (bad headers,
+4 GiB length, garbage, slowloris, floods...). Apple silicon, release, loopback:
+
+| Server | Round trips/s | p99 | Memory | Lines | Hostile traffic |
+|---|---|---|---|---|---|
+| C on libduplex | 1 297 000 | 0.8 ms | 54 MB | 20 | 17/17 |
+| Rust from scratch (thread per connection) | 419 000 | 3.7 ms | 2 MB | 48 | 17/17 |
+| Rust on the binding (`poll` / `dispatch`) | 1 341 000 / 1 319 000 | 0.7 ms | 7 MB | 23 | 17/17 |
+| Python from scratch (selectors) | 440 000 | 1.9 ms | 14 MB | 82 | 17/17 |
+| Python on the binding, `poll` + `send_many` | 633 000 | 2.1 ms | 17 MB | 27 | 17/17 |
+| Python on the binding, `dispatch` (a Python handler per packet) | 374 000 | 2.8 ms | 20 MB | 27 | 17/17 |
+| Node from scratch (`net`) | 688 000 | 1.3 ms | 108 MB | 28 | 17/17 |
+| Node on the binding (`poll` / `dispatch`) | 1 148 000 / 1 183 000 | 0.9 / 0.8 ms | 109 / 78 MB | 26 | 17/17 |
+
+What it shows:
+- **Faster:** on the library each language serves 1.4× (Python) to 3.2× (Rust) more round trips
+  than the same service written by hand, with lower tail latency. The C library is the ceiling
+  and Rust and Node reach it. A Python handler called per packet (`dispatch`) is slower than a
+  hand-written loop: for hot paths in Python, loop over `poll` and answer with `send_many`.
+- **Stable:** the hand-written servers pass the hostile checks too, but only because each one
+  re-implements the checks (48–82 lines for one packet type, without UTF-8, arrays or the rest of
+  the registry). On the library the same service is 20–27 lines in every language and gets every
+  check, for every packet of the registry, from one tested implementation.
+- **Memory:** the library reserves its buffers for `max_conns` connections up front (54 MB for
+  4096 here): predictable, but more than a server that allocates as it goes.
+
+The benchmark itself led to two library changes: writes are now grouped per connection (the C
+server went from 561 000 to 1 297 000 round trips/s), and a readable socket is read again while
+it fills the buffer (big packets no longer wait for the next poll).
 
 Run them: `ctest --preset release -L Performance` (needs `cmake --preset release` first). The
 `performance` test runs `Tools/Scripts/bench_compare.sh`, which takes the best of 5 runs and fails
@@ -264,7 +306,7 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 | `dx_listen`, `dx_listen_port`, `dx_connect` | start a server, read its port, start a client |
 | `dx_poll` / `dx_release` | receive a batch of packets (zero-copy) / give their memory back |
 | `dx_send`, `dx_send_batch`, `dx_close` | send (validated, copied), send many, close gracefully |
-| `dx_on_packet`, `dx_set_hooks`, `dx_dispatch`, `dx_tunnel` | handlers, hooks, push-style loop, relays |
+| `dx_flush`, `dx_tunnel` | write queued packets now; relay two connections inside the library |
 | `dx_crc32c(crc, data, len)` | CRC-32C checksum, hardware accelerated when possible |
 | `dx_strerror(err)` | static text for an error code, never NULL |
 | `dx_abi_version()` | version of the loaded library |
@@ -275,7 +317,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
 
 | Platform | What runs |
 |---|---|
-| Linux x86-64 and arm64, macOS arm64 and x86-64 | everything: debug suite (C tests, bindings in C++/Python/Rust/Node, WebAssembly, 5×5 matrix), then AddressSanitizer + UBSan, and ThreadSanitizer on Linux |
+| Linux x86-64 and arm64, macOS arm64 and x86-64 | everything: debug suite (C tests, bindings in C++/Python/Rust/Node, WebAssembly, 3×3 matrix), then AddressSanitizer + UBSan, and ThreadSanitizer on Linux |
 | Windows x86-64 and arm64 | the library (Winsock + `WSAPoll`) and the C unit, property, vector, integration and memory tests (clang from the runner, MSVC runtime). The bindings, shell-based checks, raw-socket fault tests and threads test are not ported |
 | Linux (fuzz job) | both libFuzzer targets for 20 s each |
 
@@ -297,7 +339,7 @@ io_uring and poll backends), `Tools/Scripts/coverage.sh` measures coverage (see 
 | Folder | What is in it |
 |---|---|
 | `Include/Duplex/` | the public headers (the contract) |
-| `Source/Core/` | header logic, registry lookup; `Ctx/` context, event loop, delivery queue, listener; `Conn/` one connection (lifecycle, sending, receiving, events, maintenance); `Hooks/` handlers, hooks, tunnels |
+| `Source/Core/` | header logic, registry lookup; `Ctx/` context, event loop, delivery queue, listener, relay; `Conn/` one connection (lifecycle, sending, receiving, events, maintenance) |
 | `Source/Codec/` | byte order, payload writer/reader, UTF-8 |
 | `Source/Memory/` | ring buffer and slot pool (no allocation: the caller gives the memory) |
 | `Source/IO/` | I/O backends (poll, epoll, kqueue, io_uring) and the socket layer (BSD sockets, Winsock) |
@@ -308,6 +350,51 @@ io_uring and poll backends), `Tools/Scripts/coverage.sh` measures coverage (see 
 | `Tests/`, `Bench/` | all tests (`Unit`, `Property`, `Vectors`, `Integration`, `Faults`, `Fuzz`, `Memory`, `Concurrency`, `Stress`, `Generated`, `Bindings`, `Wasm`, `Examples`); benchmarks and baselines |
 | `Tools/Scripts/` | shell checks (naming, ABI, source rules, benchmark comparison, Linux/Docker run, coverage) |
 | `CMake/` | build modules (warnings, sanitizers, coverage) |
+
+## Tests
+
+`ctest --preset debug` prints a pass/fail table. Library tests are C; the two repository checks
+are short shell scripts.
+
+| Check | What it proves |
+|---|---|
+| Naming | folders PascalCase, files snake_case, no case-only clashes (macOS/Windows are case-insensitive) |
+| Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
+| Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
+| Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
+| Generated | one test per language (`Tests/Generated/<Lang>/`) checks that its generated code lists the same packets, names and layouts as `Generated/registry.txt`; C always runs, C++/Python/Rust/TypeScript run if `c++`, Python 3.11+, `rustc`, `node` (22.6+) are installed |
+| Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
+| Integration | real server and client over loopback on every backend: handshake, ping/pong, 1 MiB both ways, 10 000 ordered packets, clean close from either side; the native relay (a filtering proxy, back-pressure through it, teardown); every misuse of the API and every allocation failure |
+| Faults | a raw socket sends hostile traffic: 1 byte at a time, bad magic/version/flags/direction/sequence/id, huge lengths, bad UTF-8, hang-up mid-packet, slowloris, flood with back-pressure |
+| Memory | after warm-up the allocator hook counts **zero** calls during traffic and connection churn, and nothing leaks; `check_source_rules.sh` forbids allocation and printing outside `context.c` |
+| Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
+| Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
+| Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks (written in the language) |
+| Wasm | the WebAssembly codec passes the same reference vectors as C; the web chat runs end to end (gateway, WebSocket client code, C server) and the page and every module it imports are fetched like a browser would |
+| Examples | the chat server and client in Rust, Python and Node run as separate processes |
+| CrossLanguage | one test per (client, server) pair among Rust, Python and Node (3×3), same scenario and checks |
+| Performance | `ctest -L Performance` (release): codec, CRC and loopback round-trip benchmarks compared with the machine's baseline; per-binding cost reports. The service benchmark (`Tools/Scripts/bench_service.sh`) is run by hand |
+| Fuzz | libFuzzer feeds random bytes to the decoders and to a live connection's framing under ASan/UBSan |
+| Abi | exported symbols equal `Tests/Abi/symbols.txt` |
+
+Coverage of `Source/` measured with `Tools/Scripts/coverage.sh` on macOS (C tests only, so
+the Linux-only epoll/io_uring files are not in it): **96 % of lines, 85 % of branches**.
+
+Extra runs (macOS needs Homebrew LLVM: `export CC=/opt/homebrew/opt/llvm/bin/clang`):
+
+```bash
+cmake --preset asan && cmake --build --preset asan && ctest --preset asan   # memory errors, UB
+cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fuzz, 10 s per target
+```
+
+Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
+so run `Tools/Scripts/linux_check.sh` (Docker, Ubuntu) to run debug, asan and tsan on Linux, which
+also exercises the epoll backend, and replays the runtime tests on poll and io_uring. Any runtime
+test can be pointed at a backend with `DX_TEST_BACKEND=<n>` (1 poll, 2 epoll, 3 kqueue, 4 io_uring). Coverage of `Source/`: 100 % lines, about 98 % branches.
+
+Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
+(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
+Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
 
 ## Planned
 

@@ -7,7 +7,7 @@
 #include "dx_simd.h"
 
 /*
- * In plain words: the browser build contains only the codec (headers, payload validation, UTF-8,
+ * The browser build contains only the codec (headers, payload validation, UTF-8,
  * registry, CRC-32C): no sockets, no event loop. In a browser the network is a WebSocket owned
  * by JavaScript, and this module checks and builds the bytes that travel on it.
  * It has no C library, so the few functions normally taken from it are written here, and

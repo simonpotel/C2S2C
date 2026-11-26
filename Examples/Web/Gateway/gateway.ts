@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Usage: gateway.ts <duplex server port> [http port]     (the http port is printed first)
-// In plain words: browsers cannot speak raw TCP, so this small relay accepts a WebSocket from the
+// Browsers cannot speak raw TCP, so this small relay accepts a WebSocket from the
 // page, opens a TCP connection to the chat server, and passes whole Duplex frames both ways (one
 // frame per WebSocket message). It does not look inside the frames: the server validates them.
 // It also serves the page and its TypeScript modules, turning the TypeScript into JavaScript on

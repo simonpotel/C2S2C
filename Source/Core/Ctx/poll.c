@@ -6,13 +6,15 @@
 #define EVENT_BATCH 128
 
 /*
- * In plain words: dx_poll is the heartbeat. Each round it waits for the sockets, moves bytes
+ * Dx_poll is the heartbeat. Each round it waits for the sockets, moves bytes
  * (accept, read, write), and then hands finished packets to the application as one batch.
  */
 
 /* One round: wait for the sockets, then process what is ready. */
 static void pump(dx_ctx* ctx, int timeout_ms)
 {
+    /* Replies queued since the last round leave now, one write per connection. */
+    if (ctx->dirty_count) dx_conn_flush_dirty(ctx);
     if (ctx->stalled_count && dx_ctx_has_room(ctx)) dx_conn_retry_stalled(ctx);
 
     /* Wake up at least every scan interval so idle connections are noticed on time. */
@@ -37,7 +39,10 @@ static void pump(dx_ctx* ctx, int timeout_ms)
 int dx_poll(dx_ctx* ctx, dx_packet* out, int max, int timeout_ms)
 {
     if (!ctx || !out || max <= 0) return DX_ERR_INVALID_ARG;
-    uint64_t deadline = dx_net_now_ms() + (uint64_t)(timeout_ms > 0 ? timeout_ms : 0);
+    /* Refresh the clock first: the remaining time below is computed from ctx->now_ms, which may
+     * date from the previous call (a stale value made a 1 ms poll wait up to 100 ms). */
+    ctx->now_ms = dx_net_now_ms();
+    uint64_t deadline = ctx->now_ms + (uint64_t)(timeout_ms > 0 ? timeout_ms : 0);
 
     for (;;) {
         int pending = ctx->q_tail != ctx->q_handed;

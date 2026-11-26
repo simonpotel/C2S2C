@@ -17,7 +17,7 @@ const codes: Record<string, number> = {};
 for (const m of fs.readFileSync(path.join(root, "Include/Duplex/dx_errors.h"), "utf8").matchAll(/#define (DX_\w+)\s+\(?(-?\d+)\)?/g)) codes[m[1]] = Number(m[2]);
 
 test("the module loads and reports the library version", () => {
-  assert.equal(codec.abiVersion() >> 16, 1);
+  assert.equal(codec.abiVersion() >> 16, 2);
   for (const code of Object.keys(ERROR_MESSAGES).map(Number)) assert.equal(codec.strerror(code), ERROR_MESSAGES[code]);
 });
 

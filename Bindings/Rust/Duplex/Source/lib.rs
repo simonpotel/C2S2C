@@ -1,14 +1,14 @@
 //! Safe Rust binding of the Duplex packet library.
 //! SPDX-License-Identifier: MIT
 //!
-//! In plain words: the C library hands out raw pointers that must be given back in order and
+//! The C library hands out raw pointers that must be given back in order and
 //! reports errors as negative numbers. This crate turns that into Rust habits:
 //!
 //! * [`Context`] owns the engine and frees it on `Drop`;
 //! * [`Batch`] owns the packets of one poll and releases them on `Drop`; a [`Packet`] borrows
 //!   from its batch, so the compiler refuses any use after the release;
 //! * errors are `Result<_, Error>`;
-//! * handlers and hooks are closures.
+//! * handlers and hooks are closures, run in Rust over batched polls (no per-packet FFI callback).
 //!
 //! A context must be used by one thread at a time: it can be moved to another thread but not
 //! shared (it is `Send`, not `Sync`).
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::marker::PhantomData;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::c_int;
 
 /// Packet ids generated from `Registry/protocol.toml`.
 #[path = "../../../../Generated/Rust/registry.rs"]
@@ -31,6 +31,7 @@ const ERR_TRUNCATED: i32 = -2;
 const ERR_BAD_UTF8: i32 = -8;
 const ERR_OVERFLOW: i32 = -12;
 const ERR_NO_MEMORY: i32 = -18;
+const ERR_REJECTED: i32 = -22;
 
 /// A library error: the `DX_ERR_*` code (negative) and its message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,6 +266,10 @@ impl Config {
         self.0.rx_queue = n;
         self
     }
+    pub fn idle_timeout_ms(mut self, n: u32) -> Self {
+        self.0.idle_timeout_ms = n;
+        self
+    }
     pub fn rx_ring_bytes(mut self, n: u32) -> Self {
         self.0.rx_ring_bytes = n;
         self
@@ -286,6 +291,7 @@ pub struct Hooks {
 /// What a context can do. Handlers receive a `&Handle`, and a [`Context`] dereferences to one.
 pub struct Handle {
     raw: *mut sys::dx_ctx,
+    inner: *const Inner,
 }
 
 type HandlerFn = Box<dyn FnMut(&Handle, &Packet)>;
@@ -296,9 +302,10 @@ struct Inner {
 }
 
 /// One network engine; frees itself on drop. Not `Sync`.
+/// Handlers and hooks run here, in Rust, over one batched poll: the C library never calls back.
 pub struct Context {
     handle: Handle,
-    inner: Box<Inner>,
+    _inner: Box<Inner>,
     _single_thread: PhantomData<*const ()>,
 }
 
@@ -338,42 +345,68 @@ impl Context {
         if raw.is_null() {
             return Err(Error(ERR_NO_MEMORY));
         }
-        Ok(Context {
-            handle: Handle { raw },
-            inner: Box::new(Inner { handlers: RefCell::new(HashMap::new()), hooks: RefCell::new(Hooks::default()) }),
-            _single_thread: PhantomData,
-        })
+        let inner = Box::new(Inner { handlers: RefCell::new(HashMap::new()), hooks: RefCell::new(Hooks::default()) });
+        Ok(Context { handle: Handle { raw, inner: &*inner }, _inner: inner, _single_thread: PhantomData })
     }
 
-    /// Calls `f` for packets with this id (0 = default handler); it may call `send`, `close`...
+    /// Calls `f` for packets with this id (0 = default handler) during `dispatch`.
     pub fn on_packet(&self, id: u16, f: impl FnMut(&Handle, &Packet) + 'static) -> Result<()> {
-        self.inner.handlers.borrow_mut().insert(id, Box::new(f));
-        let user = &*self.inner as *const Inner as *mut c_void;
-        // SAFETY: `inner` lives as long as the context; the trampoline only reads it.
-        check(unsafe { sys::dx_on_packet(self.handle.raw, id, Some(handler_trampoline), user) }).map(|_| ())
+        self.inner().handlers.borrow_mut().insert(id, Box::new(f));
+        Ok(())
     }
 
     /// Installs hooks (replacing the previous ones).
     pub fn set_hooks(&self, hooks: Hooks) -> Result<()> {
-        *self.inner.hooks.borrow_mut() = hooks;
-        let c = sys::dx_hooks {
-            size: std::mem::size_of::<sys::dx_hooks>() as u32,
-            reserved: 0,
-            on_connect: Some(on_connect),
-            on_disconnect: Some(on_disconnect),
-            before_send: Some(before_send),
-            after_recv: Some(after_recv),
-            on_error: Some(on_error),
-            user: &*self.inner as *const Inner as *mut c_void,
-        };
-        // SAFETY: the library copies the structure.
-        check(unsafe { sys::dx_set_hooks(self.handle.raw, &c) }).map(|_| ())
+        *self.inner().hooks.borrow_mut() = hooks;
+        Ok(())
     }
 
-    /// Like `poll`, but runs handlers and hooks and releases. Returns the entries handled.
+    /// Polls once, then runs hooks and handlers for the whole batch and releases it.
+    /// Returns the number of entries handled.
     pub fn dispatch(&self, timeout_ms: i32) -> Result<usize> {
-        // SAFETY: valid context.
-        check(unsafe { sys::dx_dispatch(self.handle.raw, timeout_ms) }).map(|n| n as usize)
+        let batch = self.handle.poll(timeout_ms)?;
+        let inner = self.inner();
+        for p in batch.iter() {
+            match p.id {
+                sys::DX_SYS_CONNECTED => {
+                    if let Some(f) = inner.hooks.borrow_mut().on_connect.as_mut() {
+                        f(p.conn);
+                    }
+                }
+                sys::DX_SYS_DISCONNECTED => {
+                    let reason = p.reason()?;
+                    let mut hooks = inner.hooks.borrow_mut();
+                    if reason < 0 {
+                        if let Some(f) = hooks.on_error.as_mut() {
+                            f(p.conn, reason);
+                        }
+                    }
+                    if let Some(f) = hooks.on_disconnect.as_mut() {
+                        f(p.conn, reason);
+                    }
+                }
+                _ => {
+                    let dropped = inner.hooks.borrow_mut().after_recv.as_mut().map(|f| f(&p)).unwrap_or(false);
+                    if dropped {
+                        continue;
+                    }
+                    // try_borrow_mut: a handler cannot reach on_packet (it only gets a Handle).
+                    if let Ok(mut map) = inner.handlers.try_borrow_mut() {
+                        if map.contains_key(&p.id) {
+                            map.get_mut(&p.id).unwrap()(&self.handle, &p);
+                        } else if let Some(f) = map.get_mut(&0) {
+                            f(&self.handle, &p);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(batch.len())
+    }
+
+    fn inner(&self) -> &Inner {
+        // SAFETY: points into `_inner`, which lives as long as `self`.
+        unsafe { &*self.handle.inner }
     }
 }
 
@@ -398,8 +431,19 @@ impl Handle {
         check(unsafe { sys::dx_close(self.raw, conn) }).map(|_| ())
     }
 
-    /// Sends a packet; `Err(Error(-14))` means the send buffer is full (see `try_send`).
+    /// Queues a packet (written at the next poll/dispatch, or by `flush`).
+    /// `Err(Error(-14))` means the send buffer is full (see `try_send`); `Err(Error(-22))` means
+    /// the `before_send` hook refused it.
     pub fn send(&self, conn: u32, id: u16, data: &[u8]) -> Result<()> {
+        // SAFETY: `inner` lives as long as the context this handle belongs to.
+        let inner = unsafe { &*self.inner };
+        if let Ok(mut hooks) = inner.hooks.try_borrow_mut() {
+            if let Some(f) = hooks.before_send.as_mut() {
+                if f(conn, id, data) {
+                    return Err(Error(ERR_REJECTED));
+                }
+            }
+        }
         check(unsafe { sys::dx_send(self.raw, conn, id, data.as_ptr(), data.len() as u32) }).map(|_| ())
     }
 
@@ -412,6 +456,11 @@ impl Handle {
         }
     }
 
+    /// Writes queued packets now (only needed when no poll/dispatch follows).
+    pub fn flush(&self) -> Result<()> {
+        check(unsafe { sys::dx_flush(self.raw) }).map(|_| ())
+    }
+
     /// Waits up to `timeout_ms` and returns up to 64 packets, released when the batch is dropped.
     pub fn poll(&self, timeout_ms: i32) -> Result<Batch<'_>> {
         let mut raw = vec![
@@ -421,59 +470,5 @@ impl Handle {
         let n = check(unsafe { sys::dx_poll(self.raw, raw.as_mut_ptr(), 64, timeout_ms) })?;
         raw.truncate(n as usize);
         Ok(Batch { handle: self, raw })
-    }
-}
-
-// ---------------------------------------------------------------- C callbacks into closures
-
-unsafe extern "C" fn handler_trampoline(ctx: *mut sys::dx_ctx, p: *const sys::dx_packet, user: *mut c_void) {
-    let inner = &*(user as *const Inner);
-    let handle = Handle { raw: ctx };
-    let packet = Packet::from_raw(&*p);
-    // try_borrow_mut: a handler that registers another handler is ignored instead of panicking.
-    if let Ok(mut map) = inner.handlers.try_borrow_mut() {
-        if let Some(f) = map.get_mut(&packet.id) {
-            f(&handle, &packet);
-        } else if let Some(f) = map.get_mut(&0) {
-            f(&handle, &packet);
-        }
-    }
-}
-
-unsafe fn hooks_of<'a>(user: *mut c_void) -> std::cell::RefMut<'a, Hooks> {
-    (&*(user as *const Inner)).hooks.borrow_mut()
-}
-
-unsafe extern "C" fn on_connect(_: *mut sys::dx_ctx, conn: u32, user: *mut c_void) {
-    if let Some(f) = hooks_of(user).on_connect.as_mut() {
-        f(conn);
-    }
-}
-
-unsafe extern "C" fn on_disconnect(_: *mut sys::dx_ctx, conn: u32, reason: c_int, user: *mut c_void) {
-    if let Some(f) = hooks_of(user).on_disconnect.as_mut() {
-        f(conn, reason);
-    }
-}
-
-unsafe extern "C" fn on_error(_: *mut sys::dx_ctx, conn: u32, err: c_int, user: *mut c_void) {
-    if let Some(f) = hooks_of(user).on_error.as_mut() {
-        f(conn, err);
-    }
-}
-
-unsafe extern "C" fn before_send(_: *mut sys::dx_ctx, conn: u32, id: u16, data: *const u8, len: u32, user: *mut c_void) -> c_int {
-    let bytes = if len == 0 { &[][..] } else { std::slice::from_raw_parts(data, len as usize) };
-    match hooks_of(user).before_send.as_mut() {
-        Some(f) => f(conn, id, bytes) as c_int,
-        None => 0,
-    }
-}
-
-unsafe extern "C" fn after_recv(_: *mut sys::dx_ctx, p: *const sys::dx_packet, user: *mut c_void) -> c_int {
-    let packet = Packet::from_raw(&*p);
-    match hooks_of(user).after_recv.as_mut() {
-        Some(f) => f(&packet) as c_int,
-        None => 0,
     }
 }

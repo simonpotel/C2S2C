@@ -1,8 +1,8 @@
-// test_web.ts - the web chat end to end, without a browser window: the C chat server, the
+// test_web.ts - the web chat end to end, without a browser window: the Node chat server, the
 // gateway, and the browser-side client code (WebAssembly codec + WebSocket) run for real.
 // SPDX-License-Identifier: MIT
 // "Headless" here means Node's built-in WebSocket stands in for the browser's: the page's own
-// modules are loaded exactly as written. Env: DUPLEX_WASM, DX_CHAT_SERVER (the C server binary).
+// modules are loaded exactly as written. Env: DUPLEX_WASM, DUPLEX_ADDON (the Node addon the chat server uses).
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
@@ -25,7 +25,8 @@ function start(cmd: string, args: string[], children: ChildProcess[]): Promise<n
 test("web client chats through the gateway, and the page is served", async (t) => {
   const children: ChildProcess[] = [];
   t.after(() => children.forEach((c) => c.kill()));
-  const serverPort = await start(process.env.DX_CHAT_SERVER as string, [], children);
+  const serverPort = await start(process.execPath, ["--experimental-strip-types", "--no-warnings",
+    new URL("../../Examples/Node/Server/chat_server.ts", import.meta.url).pathname], children);
   const gatewayPort = await start(process.execPath, ["--experimental-strip-types", "--no-warnings",
     new URL("../../Examples/Web/Gateway/gateway.ts", import.meta.url).pathname, String(serverPort)], children);
   const base = `http://127.0.0.1:${gatewayPort}`;

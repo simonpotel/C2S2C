@@ -7,7 +7,7 @@
 #include "utf8.h"
 
 /*
- * In plain words: a reader is a cursor over received bytes. Every read first checks that
+ * A reader is a cursor over received bytes. Every read first checks that
  * enough bytes remain (network data is never trusted). On failure the error is remembered and
  * later reads return 0/NULL. dx_payload_validate_schema() uses the very same reader to walk a
  * packet field by field, so "valid" always means "readable with these exact functions".

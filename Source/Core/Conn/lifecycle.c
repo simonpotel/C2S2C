@@ -5,7 +5,7 @@
 #include "dx_internal.h"
 
 /*
- * In plain words: a connection is a slot in a fixed table. The application never sees the slot
+ * A connection is a slot in a fixed table. The application never sees the slot
  * itself, only a "handle" made of the slot number and a generation counter. When a slot is
  * reused the generation changes, so an old handle can never be mistaken for the new connection.
  */
@@ -69,6 +69,7 @@ int dx_conn_adopt(dx_ctx* ctx, int fd, int server_side, int connecting, uint32_t
 /* Frees the slot immediately and tells the application why (0 = normal close). */
 void dx_conn_close_now(dx_ctx* ctx, dx_conn* c, int reason)
 {
+    if (c->tunnel) dx_tunnel_on_close(ctx, c); /* the other end of a relay goes down too */
     uint32_t handle = dx_conn_handle(ctx, c);
     ctx->ops->del(ctx->io, c->fd);
     dx_net_close(c->fd);

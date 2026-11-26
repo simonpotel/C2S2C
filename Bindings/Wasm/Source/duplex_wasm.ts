@@ -1,7 +1,7 @@
 // duplex_wasm.ts - the Duplex codec compiled to WebAssembly, with a small JavaScript wrapper.
 // SPDX-License-Identifier: MIT
 //
-// In plain words: the browser has no sockets we can use directly, but it can run the very same C
+// The browser has no sockets we can use directly, but it can run the very same C
 // code that checks headers, payloads (UTF-8 included) and checksums on the server. This wrapper
 // loads that module and exposes it as functions on Uint8Array. Nothing here touches the network.
 import { DuplexError } from "../../Node/Source/codec.ts";

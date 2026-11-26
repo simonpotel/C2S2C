@@ -6,7 +6,7 @@
 #include "dx_internal.h"
 
 /*
- * In plain words: finished packets are copied into the ring (one contiguous block each) and
+ * Finished packets are copied into the ring (one contiguous block each) and
  * described by an entry in a fixed queue. dx_poll hands entries out; dx_release frees them in
  * the same order, which also frees their bytes in the ring. Three free-running counters
  * describe the queue: head (oldest not released) <= handed (next to hand out) <= tail (next

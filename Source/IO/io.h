@@ -9,7 +9,7 @@
 #include "Duplex/dx_types.h"
 
 /*
- * In plain words: the operating system can watch thousands of sockets for us and say which
+ * The operating system can watch thousands of sockets for us and say which
  * ones have data (readable) or room to send (writable). Every OS has its own way of doing so
  * (poll everywhere, epoll on Linux, kqueue on macOS/BSD...). This interface hides the
  * difference: the rest of the library only talks to dx_io_ops.

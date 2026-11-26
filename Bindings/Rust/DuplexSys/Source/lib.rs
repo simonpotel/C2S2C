@@ -48,22 +48,8 @@ pub struct dx_packet {
     pub reserved: u8,
 }
 
-pub type dx_handler = Option<unsafe extern "C" fn(*mut dx_ctx, *const dx_packet, *mut c_void)>;
-
-#[repr(C)]
-pub struct dx_hooks {
-    pub size: u32,
-    pub reserved: u32,
-    pub on_connect: Option<unsafe extern "C" fn(*mut dx_ctx, u32, *mut c_void)>,
-    pub on_disconnect: Option<unsafe extern "C" fn(*mut dx_ctx, u32, c_int, *mut c_void)>,
-    pub before_send: Option<unsafe extern "C" fn(*mut dx_ctx, u32, u16, *const u8, u32, *mut c_void) -> c_int>,
-    pub after_recv: Option<unsafe extern "C" fn(*mut dx_ctx, *const dx_packet, *mut c_void) -> c_int>,
-    pub on_error: Option<unsafe extern "C" fn(*mut dx_ctx, u32, c_int, *mut c_void)>,
-    pub user: *mut c_void,
-}
-
-/// Interface version this crate was written for: major 1, minor 4.
-pub const EXPECTED_ABI: u32 = 0x0001_0400;
+/// Interface version this crate was written for: major 2, minor 0.
+pub const EXPECTED_ABI: u32 = 0x0002_0000;
 
 pub const DX_ERR_WOULD_BLOCK: c_int = -14;
 pub const DX_SYS_CONNECTED: u16 = 0x7F01;
@@ -82,7 +68,5 @@ extern "C" {
     pub fn dx_release(ctx: *mut dx_ctx, count: c_int);
     pub fn dx_send(ctx: *mut dx_ctx, conn: u32, id: u16, data: *const u8, len: u32) -> c_int;
     pub fn dx_close(ctx: *mut dx_ctx, conn: u32) -> c_int;
-    pub fn dx_on_packet(ctx: *mut dx_ctx, id: u16, f: dx_handler, user: *mut c_void) -> c_int;
-    pub fn dx_set_hooks(ctx: *mut dx_ctx, hooks: *const dx_hooks) -> c_int;
-    pub fn dx_dispatch(ctx: *mut dx_ctx, timeout_ms: c_int) -> c_int;
+    pub fn dx_flush(ctx: *mut dx_ctx) -> c_int;
 }

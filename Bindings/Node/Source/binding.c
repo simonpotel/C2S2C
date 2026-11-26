@@ -7,13 +7,12 @@
 #include "Duplex/duplex.h"
 
 /*
- * In plain words: this file exposes the C functions to JavaScript with the smallest possible
+ * This file exposes the C functions to JavaScript with the smallest possible
  * glue. Every function returns the library's result code (negative = error); the friendly
  * API, error classes, handlers and hooks live in index.ts.
  *
- * Received packets are handed out WITHOUT copying: their payload is an ArrayBuffer that points
- * straight into the library's ring. When the batch is released, those ArrayBuffers are
- * detached (their length becomes 0), so JavaScript can never read memory the library reused.
+ * A poll crosses into JavaScript once per batch: the packet descriptions come as one Uint32Array
+ * and all payloads as one Buffer (a single copy), never one call per packet.
  */
 
 #define CALL(env, expr)                                                                            \
@@ -64,14 +63,18 @@ static napi_value js_create(napi_env env, napi_callback_info info)
     dx_config cfg;
     dx_config_default(&cfg);
     if (argc > 0) {
-        cfg.max_conns = opt_u32(env, argv[0], "maxConns") ? opt_u32(env, argv[0], "maxConns") : cfg.max_conns;
+        cfg.max_conns =
+            opt_u32(env, argv[0], "maxConns") ? opt_u32(env, argv[0], "maxConns") : cfg.max_conns;
         uint32_t payload = opt_u32(env, argv[0], "maxPayload");
         if (payload) {
             cfg.max_payload = payload;
             cfg.tx_bytes = 4 * (payload + DX_HEADER_SIZE);
         }
         if (opt_u32(env, argv[0], "rxQueue")) cfg.rx_queue = opt_u32(env, argv[0], "rxQueue");
-        if (opt_u32(env, argv[0], "rxRingBytes")) cfg.rx_ring_bytes = opt_u32(env, argv[0], "rxRingBytes");
+        if (opt_u32(env, argv[0], "idleTimeoutMs"))
+            cfg.idle_timeout_ms = opt_u32(env, argv[0], "idleTimeoutMs");
+        if (opt_u32(env, argv[0], "rxRingBytes"))
+            cfg.rx_ring_bytes = opt_u32(env, argv[0], "rxRingBytes");
     }
     dx_ctx* ctx = dx_create(&cfg);
     if (!ctx) {
@@ -159,7 +162,45 @@ static napi_value js_send(napi_env env, napi_callback_info info)
     return make_int(env, dx_send(arg_ctx(env, argv[0]), conn, (uint16_t)id, data, (uint32_t)len));
 }
 
-/* poll(ctx, timeoutMs, max) -> array of {conn, id, sequence, data: Uint8Array}, or a negative code */
+/* sendBatch(ctx, meta: Uint32Array [conn, id, length] * n, payloads: Uint8Array) -> how many
+ * were queued, or the first error. The payloads are concatenated in order. Two arguments instead
+ * of an array of objects: reading JavaScript objects from C costs one call per property. */
+static napi_value js_send_batch(napi_env env, napi_callback_info info)
+{
+    size_t argc = 3;
+    napi_value argv[3];
+    CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+    void *meta = NULL, *data = NULL;
+    size_t meta_len = 0, data_len = 0;
+    if (napi_get_typedarray_info(env, argv[1], NULL, &meta_len, &meta, NULL, NULL) != napi_ok ||
+        napi_get_typedarray_info(env, argv[2], NULL, &data_len, &data, NULL, NULL) != napi_ok)
+        return make_int(env, DX_ERR_INVALID_ARG);
+    dx_ctx* ctx = arg_ctx(env, argv[0]);
+    const uint32_t* m = meta;
+    size_t n = meta_len / 3, offset = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t len = m[3 * i + 2];
+        if (offset + len > data_len) return make_int(env, i ? (int)i : DX_ERR_INVALID_ARG);
+        int rc = dx_send(ctx, m[3 * i], (uint16_t)m[3 * i + 1], (const uint8_t*)data + offset, len);
+        if (rc != DX_OK) return make_int(env, i ? (int)i : rc);
+        offset += len;
+    }
+    return make_int(env, (int)n);
+}
+
+static napi_value js_flush(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
+    return make_int(env, dx_flush(arg_ctx(env, argv[0])));
+}
+
+/* poll(ctx, timeoutMs, max) -> [meta, payloads] or a negative code.
+ *   meta:     Uint32Array of [conn, id, sequence, length] per packet
+ *   payloads: one Buffer holding every payload of the batch, in order (copied once)
+ * Two allocations per batch instead of several N-API calls per packet: crossing into JavaScript
+ * is what costs, and a copy into JavaScript memory can never dangle after the release. */
 static napi_value js_poll(napi_env env, napi_callback_info info)
 {
     size_t argc = 3;
@@ -170,53 +211,44 @@ static napi_value js_poll(napi_env env, napi_callback_info info)
     arg_int(env, argv[2], &max);
     if (max < 1 || max > 1024) return make_int(env, DX_ERR_INVALID_ARG);
 
-    dx_packet* pk = malloc(sizeof *pk * (size_t)max);
-    if (!pk) return make_int(env, DX_ERR_NO_MEMORY);
+    dx_packet pk[1024];
     dx_ctx* ctx = arg_ctx(env, argv[0]);
     int n = dx_poll(ctx, pk, max, timeout);
-    if (n < 0) {
-        free(pk);
-        return make_int(env, n);
-    }
-    napi_value list;
-    CALL(env, napi_create_array_with_length(env, (size_t)n, &list));
+    if (n < 0) return make_int(env, n);
+
+    size_t total = 0;
+    for (int i = 0; i < n; i++)
+        total += pk[i].length;
+    void *meta_mem = NULL, *data_mem = NULL;
+    napi_value meta_ab, meta, data, out;
+    CALL(env, napi_create_arraybuffer(env, (size_t)n * 16u, &meta_mem, &meta_ab));
+    CALL(env, napi_create_typedarray(env, napi_uint32_array, (size_t)n * 4u, meta_ab, 0, &meta));
+    CALL(env, napi_create_buffer(env, total ? total : 1, &data_mem, &data));
+    uint32_t* m = meta_mem;
+    size_t offset = 0;
     for (int i = 0; i < n; i++) {
-        napi_value obj, ab, view, v;
-        CALL(env, napi_create_object(env, &obj));
-        CALL(env, napi_create_uint32(env, pk[i].conn, &v));
-        CALL(env, napi_set_named_property(env, obj, "conn", v));
-        CALL(env, napi_create_uint32(env, pk[i].packet_id, &v));
-        CALL(env, napi_set_named_property(env, obj, "id", v));
-        CALL(env, napi_create_uint32(env, pk[i].sequence, &v));
-        CALL(env, napi_set_named_property(env, obj, "sequence", v));
-        /* Zero copy: the ArrayBuffer is the ring memory itself (detached on release). */
-        CALL(env, napi_create_external_arraybuffer(env, (void*)pk[i].data, pk[i].length, NULL, NULL, &ab));
-        CALL(env, napi_create_typedarray(env, napi_uint8_array, pk[i].length, ab, 0, &view));
-        CALL(env, napi_set_named_property(env, obj, "data", view));
-        CALL(env, napi_set_element(env, list, (uint32_t)i, obj));
+        m[4 * i] = pk[i].conn;
+        m[4 * i + 1] = pk[i].packet_id;
+        m[4 * i + 2] = pk[i].sequence;
+        m[4 * i + 3] = pk[i].length;
+        if (pk[i].length) memcpy((uint8_t*)data_mem + offset, pk[i].data, pk[i].length);
+        offset += pk[i].length;
     }
-    free(pk);
-    return list;
+    CALL(env, napi_create_array_with_length(env, 2, &out));
+    CALL(env, napi_set_element(env, out, 0, meta));
+    CALL(env, napi_set_element(env, out, 1, data));
+    return out;
 }
 
-/* release(ctx, packetsArray): detaches every payload buffer, then gives the memory back. */
+/* release(ctx, count) */
 static napi_value js_release(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
     napi_value argv[2];
+    int32_t count = 0;
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-    uint32_t n = 0;
-    CALL(env, napi_get_array_length(env, argv[1], &n));
-    for (uint32_t i = 0; i < n; i++) {
-        napi_value obj, view, ab;
-        if (napi_get_element(env, argv[1], i, &obj) != napi_ok) continue;
-        if (napi_get_named_property(env, obj, "data", &view) != napi_ok) continue;
-        if (napi_get_typedarray_info(env, view, NULL, NULL, NULL, &ab, NULL) != napi_ok) continue;
-        bool detached = false;
-        napi_is_detached_arraybuffer(env, ab, &detached);
-        if (!detached) napi_detach_arraybuffer(env, ab);
-    }
-    dx_release(arg_ctx(env, argv[0]), (int)n);
+    arg_int(env, argv[1], &count);
+    dx_release(arg_ctx(env, argv[0]), count);
     return NULL;
 }
 
@@ -244,13 +276,23 @@ NAPI_MODULE_INIT()
     static const struct {
         const char* name;
         napi_callback fn;
-    } functions[] = {{"create", js_create},   {"destroy", js_destroy}, {"listen", js_listen},
-                     {"connect", js_connect}, {"port", js_port},       {"close", js_close},
-                     {"send", js_send},       {"poll", js_poll},       {"release", js_release},
-                     {"strerror", js_strerror}, {"abiVersion", js_abi_version}};
+    } functions[] = {{"create", js_create},
+                     {"destroy", js_destroy},
+                     {"listen", js_listen},
+                     {"connect", js_connect},
+                     {"port", js_port},
+                     {"close", js_close},
+                     {"send", js_send},
+                     {"sendBatch", js_send_batch},
+                     {"flush", js_flush},
+                     {"poll", js_poll},
+                     {"release", js_release},
+                     {"strerror", js_strerror},
+                     {"abiVersion", js_abi_version}};
     for (size_t i = 0; i < sizeof functions / sizeof functions[0]; i++) {
         napi_value fn;
-        if (napi_create_function(env, functions[i].name, NAPI_AUTO_LENGTH, functions[i].fn, NULL, &fn) != napi_ok ||
+        if (napi_create_function(env, functions[i].name, NAPI_AUTO_LENGTH, functions[i].fn, NULL,
+                                 &fn) != napi_ok ||
             napi_set_named_property(env, exports, functions[i].name, fn) != napi_ok)
             return NULL;
     }

@@ -97,6 +97,9 @@ typedef struct dx_ctx dx_ctx;
 #define DX_BACKEND_KQUEUE 3
 #define DX_BACKEND_URING 4
 
+/** Most packet ids one tunnel can drop (see dx_tunnel). */
+#define DX_TUNNEL_MAX_DROP 16
+
 /** dx_config.flags: accept packets without checking their payload against the registry. */
 #define DX_CFG_NO_VALIDATE 0x1u
 
@@ -132,34 +135,6 @@ typedef struct dx_config {
     uint32_t max_tunnels; /* relays set up with dx_tunnel; default 16 (added after first release) */
     uint32_t reserved;
 } dx_config;
-
-typedef struct dx_packet dx_packet; /* defined below */
-
-/** Reaction to one received packet (see dx_on_packet). The packet is valid during the call only. */
-typedef void (*dx_handler)(dx_ctx* ctx, const dx_packet* packet, void* user);
-
-/** Decides the fate of a packet crossing a tunnel: 0 = forward it, non-zero = drop it. */
-typedef int (*dx_tunnel_filter)(dx_ctx* ctx, const dx_packet* packet, int from_first, void* user);
-
-/**
- * Hooks observe or filter everything that happens in a context. Every field is optional (NULL =
- * not used). They run in the thread that owns the context. See dx_set_hooks.
- */
-typedef struct dx_hooks {
-    uint32_t size; /* sizeof(dx_hooks) */
-    uint32_t reserved;
-    void (*on_connect)(dx_ctx* ctx, uint32_t conn, void* user);
-    void (*on_disconnect)(dx_ctx* ctx, uint32_t conn, int reason, void* user);
-    /* Called by dx_send before queuing; non-zero rejects the packet (dx_send returns
-     * DX_ERR_REJECTED). Must not call dx_send. */
-    int (*before_send)(dx_ctx* ctx, uint32_t conn, uint16_t packet_id, const uint8_t* data,
-                       uint32_t len, void* user);
-    /* Called by dx_dispatch for every received packet; non-zero drops it (no handler sees it). */
-    int (*after_recv)(dx_ctx* ctx, const dx_packet* packet, void* user);
-    /* Called by dx_dispatch when a connection ends because of an error (reason < 0). */
-    void (*on_error)(dx_ctx* ctx, uint32_t conn, int err, void* user);
-    void* user;
-} dx_hooks;
 
 /** A received packet or system event, valid until released with dx_release. */
 typedef struct dx_packet {

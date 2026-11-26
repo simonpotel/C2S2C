@@ -5,12 +5,11 @@ dx_connect
 dx_crc32c
 dx_create
 dx_destroy
-dx_dispatch
+dx_flush
 dx_header_decode
 dx_header_encode
 dx_listen
 dx_listen_port
-dx_on_packet
 dx_packet_name
 dx_payload_validate
 dx_payload_validate_schema
@@ -27,7 +26,6 @@ dx_reader_init
 dx_release
 dx_send
 dx_send_batch
-dx_set_hooks
 dx_strerror
 dx_tunnel
 dx_w_bytes

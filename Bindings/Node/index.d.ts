@@ -21,7 +21,7 @@ export class Packet {
   readonly conn: number;
   readonly id: number;
   readonly sequence: number;
-  /** Zero-copy view of the payload. Throws after the batch was released. */
+  /** The payload. Throws after the batch was released (copy with data.slice() to keep it). */
   readonly data: Uint8Array;
   values(): Value[];
   /** For SYS_DISCONNECTED: 0 for a normal close, a negative DX_ERR_* otherwise. */
@@ -51,7 +51,7 @@ export interface Hooks {
 export type Handler = (ctx: Context, packet: Packet) => void;
 
 export class Context {
-  constructor(settings?: { maxConns?: number; maxPayload?: number; rxQueue?: number; rxRingBytes?: number });
+  constructor(settings?: { maxConns?: number; maxPayload?: number; rxQueue?: number; rxRingBytes?: number; idleTimeoutMs?: number });
   destroy(): void;
   [Symbol.dispose](): void;
   listen(address?: string, port?: number): void;
@@ -60,6 +60,10 @@ export class Context {
   close(conn: number): void;
   send(conn: number, id: number, data?: Uint8Array): void;
   trySend(conn: number, id: number, data?: Uint8Array): boolean;
+  /** Sends [[conn, id, data], ...] with one call into the library; returns how many were queued. */
+  sendMany(packets: [number, number, Uint8Array][]): number;
+  /** Writes queued packets now (only needed when no poll/dispatch follows). */
+  flush(): void;
   poll(timeoutMs?: number, max?: number): Batch;
   onPacket(id: number, fn?: Handler): void;
   setHooks(hooks: Hooks): void;

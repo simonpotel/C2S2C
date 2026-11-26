@@ -8,7 +8,7 @@
 #define DX_POOL_NONE 0xFFFFFFFFu
 
 /*
- * In plain words: N equally sized boxes in one block of memory. Taking a box and giving it
+ * N equally sized boxes in one block of memory. Taking a box and giving it
  * back are O(1) and never allocate. Free boxes form a chain: the first 4 bytes of a free box
  * store the index of the next free one, so no extra bookkeeping memory is needed.
  */

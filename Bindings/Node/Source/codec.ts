@@ -1,7 +1,7 @@
 // codec.ts - payload encoding/decoding by registry layout; no Node-specific code, so browsers use it too.
 // SPDX-License-Identifier: MIT
 //
-// In plain words: a packet's payload is a plain sequence of fields (see DOCUMENTATION.md). The
+// A packet's payload is a plain sequence of fields (see DOCUMENTATION.md). The
 // layout of each packet comes from the registry; this file turns JavaScript values into those
 // bytes and back. (The C library re-validates everything it sends and receives.)
 import { PACKETS } from "../../../Generated/TypeScript/registry.ts";

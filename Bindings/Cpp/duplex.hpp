@@ -1,13 +1,13 @@
 // duplex.hpp - C++17 header-only wrapper over the Duplex C API (RAII, exceptions, lambdas).
 // SPDX-License-Identifier: MIT
 //
-// In plain words: the C library hands out raw pointers that must be released in the right order
+// The C library hands out raw pointers that must be released in the right order
 // and reports errors as negative numbers. This wrapper turns that into C++ habits:
 //   - Context owns the library context and frees it automatically;
 //   - Batch owns the packets of one poll and releases them when it goes out of scope, so you
 //     cannot use a packet pointer after it was given back;
 //   - errors are thrown as duplex::Error (carrying the DX_ERR_* code and its message);
-//   - handlers and hooks are std::function (lambdas work).
+//   - handlers and hooks are std::function (lambdas work), run in C++ over batched polls.
 #pragma once
 
 #include <Duplex/duplex.h>
@@ -184,15 +184,14 @@ struct Hooks {
     std::function<bool(const Packet&)> after_recv; // true = drop
 };
 
-/// One network engine. Use it from one thread. Neither copyable nor movable (callbacks keep its
-/// address); freed on destruction.
+/// One network engine. Use it from one thread. Not copyable; freed on destruction.
+/// Handlers and hooks run here, in C++, over one batched poll: the C library never calls back.
 class Context
 {
   public:
-    explicit Context(const dx_config* cfg = nullptr) : ctx_(dx_create(cfg)), impl_(new Impl)
+    explicit Context(const dx_config* cfg = nullptr) : ctx_(dx_create(cfg))
     {
         if (!ctx_) throw Error(DX_ERR_NO_MEMORY);
-        impl_->self = ctx_.get();
     }
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
@@ -210,19 +209,23 @@ class Context
     }
     void close(uint32_t conn) { check(dx_close(ctx_.get(), conn)); }
 
-    /// Sends a packet. Throws Error(DX_ERR_WOULD_BLOCK) if the send buffer is full; see try_send.
+    /// Queues a packet (written at the next poll/dispatch, or by flush). Throws
+    /// Error(DX_ERR_WOULD_BLOCK) if the send buffer is full (see try_send), and
+    /// Error(DX_ERR_REJECTED) if the before_send hook refuses it.
     void send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
     {
-        check(dx_send(ctx_.get(), conn, id, data, len));
+        check(raw_send(conn, id, data, len));
     }
     /// Like send, but returns false instead of throwing when the send buffer is full.
     bool try_send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
     {
-        int rc = dx_send(ctx_.get(), conn, id, data, len);
+        int rc = raw_send(conn, id, data, len);
         if (rc == DX_ERR_WOULD_BLOCK) return false;
         check(rc);
         return true;
     }
+    /// Writes queued packets now (only needed when no poll/dispatch follows).
+    void flush() { check(dx_flush(ctx_.get())); }
 
     /// Waits up to timeout_ms and returns up to max packets, released when the Batch dies.
     Batch poll(int timeout_ms, int max = 64)
@@ -237,69 +240,53 @@ class Context
     /// Calls fn for packets with this id (0 = default handler); an empty function removes it.
     void on_packet(uint16_t id, Handler fn)
     {
-        if (fn) {
-            impl_->handlers[id] = std::move(fn);
-            check(dx_on_packet(ctx_.get(), id, &Impl::handler, this));
-        } else {
-            impl_->handlers.erase(id);
-            check(dx_on_packet(ctx_.get(), id, nullptr, nullptr));
-        }
+        if (fn)
+            handlers_[id] = std::move(fn);
+        else
+            handlers_.erase(id);
     }
     /// Installs hooks (replacing earlier ones).
-    void set_hooks(Hooks hooks)
-    {
-        impl_->hooks = std::move(hooks);
-        dx_hooks h{};
-        h.size = sizeof h;
-        h.user = impl_.get();
-        h.on_connect = [](dx_ctx*, uint32_t c, void* u) {
-            auto& f = static_cast<Impl*>(u)->hooks.on_connect;
-            if (f) f(c);
-        };
-        h.on_disconnect = [](dx_ctx*, uint32_t c, int r, void* u) {
-            auto& f = static_cast<Impl*>(u)->hooks.on_disconnect;
-            if (f) f(c, r);
-        };
-        h.on_error = [](dx_ctx*, uint32_t c, int e, void* u) {
-            auto& f = static_cast<Impl*>(u)->hooks.on_error;
-            if (f) f(c, e);
-        };
-        h.before_send = [](dx_ctx*, uint32_t c, uint16_t id, const uint8_t* d, uint32_t n,
-                           void* u) {
-            auto& f = static_cast<Impl*>(u)->hooks.before_send;
-            return f && f(c, id, d, n) ? 1 : 0;
-        };
-        h.after_recv = [](dx_ctx*, const dx_packet* p, void* u) {
-            auto& f = static_cast<Impl*>(u)->hooks.after_recv;
-            return f && f(Packet(*p)) ? 1 : 0;
-        };
-        check(dx_set_hooks(ctx_.get(), &h));
-    }
-    /// Like poll, but runs handlers and hooks, then releases. Returns the number of entries.
-    int dispatch(int timeout_ms) { return check(dx_dispatch(ctx_.get(), timeout_ms)); }
+    void set_hooks(Hooks hooks) { hooks_ = std::move(hooks); }
 
-    /// The underlying C context, for features the wrapper does not cover.
+    /// Polls once, then runs hooks and handlers for the whole batch and releases it.
+    /// Returns the number of entries handled.
+    int dispatch(int timeout_ms, int max = 64)
+    {
+        Batch batch = poll(timeout_ms, max);
+        for (size_t i = 0; i < batch.size(); i++)
+            handle(batch[i]);
+        return static_cast<int>(batch.size());
+    }
+
+    /// The underlying C context, for features the wrapper does not cover (dx_tunnel...).
     dx_ctx* raw() { return ctx_.get(); }
 
   private:
+    int raw_send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
+    {
+        if (hooks_.before_send && hooks_.before_send(conn, id, data, len)) return DX_ERR_REJECTED;
+        return dx_send(ctx_.get(), conn, id, data, len);
+    }
+    void handle(const Packet& p)
+    {
+        if (p.id() == DX_SYS_CONNECTED) {
+            if (hooks_.on_connect) hooks_.on_connect(p.conn());
+        } else if (p.id() == DX_SYS_DISCONNECTED) {
+            int reason = p.reason();
+            if (reason < 0 && hooks_.on_error) hooks_.on_error(p.conn(), reason);
+            if (hooks_.on_disconnect) hooks_.on_disconnect(p.conn(), reason);
+        } else if (!(hooks_.after_recv && hooks_.after_recv(p))) {
+            auto it = handlers_.find(p.id());
+            if (it == handlers_.end()) it = handlers_.find(0); // default handler
+            if (it != handlers_.end()) it->second(*this, p);
+        }
+    }
     struct Deleter {
         void operator()(dx_ctx* c) const { dx_destroy(c); }
     };
-    struct Impl {
-        dx_ctx* self = nullptr;
-        std::map<uint16_t, Handler> handlers;
-        Hooks hooks;
-        static void handler(dx_ctx*, const dx_packet* p, void* user)
-        {
-            auto* c = static_cast<Context*>(user);
-            auto& map = c->impl_->handlers;
-            auto it = map.find(p->packet_id);
-            if (it == map.end()) it = map.find(0); // default handler
-            if (it != map.end()) it->second(*c, Packet(*p));
-        }
-    };
     std::unique_ptr<dx_ctx, Deleter> ctx_;
-    std::unique_ptr<Impl> impl_;
+    std::map<uint16_t, Handler> handlers_;
+    Hooks hooks_;
 };
 
 } // namespace duplex

@@ -1,7 +1,7 @@
 // duplex_web.ts - Duplex in the browser: packets over a WebSocket, checked by the WebAssembly codec.
 // SPDX-License-Identifier: MIT
 //
-// In plain words: a browser cannot open a raw TCP connection, so it talks to a gateway over a
+// A browser cannot open a raw TCP connection, so it talks to a gateway over a
 // WebSocket. Each WebSocket message carries exactly one Duplex frame (header + payload). This
 // client builds outgoing frames and checks incoming ones with the same C code as the server.
 import { decode, encode } from "../../Node/Source/codec.ts";

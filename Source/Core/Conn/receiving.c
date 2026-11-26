@@ -5,7 +5,7 @@
 #include "dx_internal.h"
 
 /*
- * In plain words: TCP is a stream of bytes with no packet boundaries. We collect bytes in the
+ * TCP is a stream of bytes with no packet boundaries. We collect bytes in the
  * connection's receive buffer until a whole header, then a whole payload, are present. Every
  * header is checked as soon as it is complete (before waiting for the payload it announces),
  * so garbage or a huge length is rejected immediately. Any invalid byte closes the connection
@@ -55,10 +55,17 @@ void dx_conn_parse(dx_ctx* ctx, dx_conn* c)
                 return;
             }
         }
-        if (dx_ctx_deliver(ctx, dx_conn_handle(ctx, c), h.packet_id, h.flags, h.sequence, payload,
-                           h.length) != DX_OK) {
-            c->stalled = 1; /* the application is behind: keep the frame, retry after release */
+        /* A relayed connection forwards to its peer; any other hands the packet to the app. */
+        rc = c->tunnel ? dx_tunnel_relay(ctx, c, h.packet_id, payload, h.length)
+                       : dx_ctx_deliver(ctx, dx_conn_handle(ctx, c), h.packet_id, h.flags,
+                                        h.sequence, payload, h.length);
+        if (rc == DX_ERR_WOULD_BLOCK) {
+            c->stalled = 1; /* the app (or the relay peer) is behind: keep the frame, retry later */
             break;
+        }
+        if (rc != DX_OK) {
+            reject(ctx, c, was_stalled, rc);
+            return;
         }
         c->rx_seq++;
         off += total;
@@ -76,21 +83,31 @@ void dx_conn_parse(dx_ctx* ctx, dx_conn* c)
     if (c->eof && !c->stalled) dx_conn_close_now(ctx, c, c->rx_len ? DX_ERR_TRUNCATED : 0);
 }
 
-/* Reads what the socket has, then parses. */
+/* Reads what the socket has and parses it. When a read fills the buffer there is probably more
+ * waiting, so it reads again (at most READ_ROUNDS times, so one busy connection cannot starve
+ * the others): with big packets the buffer holds about one frame, and one read per readiness
+ * event would make the throughput depend on how often the application polls. */
+#define READ_ROUNDS 16
+
 void dx_conn_read(dx_ctx* ctx, dx_conn* c)
 {
-    if (c->rx_len < ctx->frame_max) {
-        long n = dx_net_read(c->fd, c->rx + c->rx_len, ctx->frame_max - c->rx_len);
-        if (n > 0) {
-            c->rx_len += (uint32_t)n;
-            c->last_active_ms = ctx->now_ms;
-        } else if (n == 0) {
-            c->eof = 1;
-            dx_conn_update_interest(ctx, c); /* stop watching reads: EOF would fire forever */
-        } else if (n != DX_ERR_WOULD_BLOCK) {
-            dx_conn_close_now(ctx, c, DX_ERR_IO);
-            return;
+    for (int round = 0; round < READ_ROUNDS; round++) {
+        uint32_t space = ctx->frame_max - c->rx_len;
+        long n = 0;
+        if (space > 0) {
+            n = dx_net_read(c->fd, c->rx + c->rx_len, space);
+            if (n > 0) {
+                c->rx_len += (uint32_t)n;
+                c->last_active_ms = ctx->now_ms;
+            } else if (n == 0) {
+                c->eof = 1;
+                dx_conn_update_interest(ctx, c); /* stop watching reads: EOF would fire forever */
+            } else if (n != DX_ERR_WOULD_BLOCK) {
+                dx_conn_close_now(ctx, c, DX_ERR_IO);
+                return;
+            }
         }
+        dx_conn_parse(ctx, c);
+        if (c->state == DX_C_FREE || c->stalled || c->eof || space == 0 || n < (long)space) return;
     }
-    dx_conn_parse(ctx, c);
 }

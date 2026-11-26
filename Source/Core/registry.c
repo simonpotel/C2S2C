@@ -4,7 +4,7 @@
 #include "dx_packets.h"
 
 /*
- * In plain words: the table of known packets (dx_registry) is generated from
+ * The table of known packets (dx_registry) is generated from
  * Registry/protocol.toml, so C, C++, Python, Rust and TypeScript all agree on ids and layouts.
  * This file only searches that table. It is sorted by id, so a binary search is enough.
  */
@@ -20,11 +20,6 @@ static int find_index(uint16_t id)
             hi = mid;
     }
     return -1;
-}
-
-int dx_registry_index(uint16_t packet_id)
-{
-    return find_index(packet_id);
 }
 
 static const dx_packet_info* find_packet(uint16_t id)

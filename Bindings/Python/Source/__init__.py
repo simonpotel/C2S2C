@@ -1,8 +1,8 @@
 """Duplex: Python binding of the Duplex packet library (SPDX-License-Identifier: MIT).
 
-In plain words: Context is one network engine. You listen or connect, then either loop on
+Context is one network engine. You listen or connect, then either loop on
 ``poll`` (packets arrive in batches and are given back when the ``with`` block ends) or register
-handlers/hooks and call ``dispatch``. Payloads are built and read with ``encode`` / ``decode``
+handlers/hooks and call ``dispatch`` (they run in Python over one batched poll). Payloads are built and read with ``encode`` / ``decode``
 from the layouts in the packet registry. Errors are raised as ``duplex.Error``.
 """
 import ctypes
@@ -113,46 +113,57 @@ def decode(packet_id, data):
 # ---- packets, batches, context ----
 
 class Packet:
-    """A received packet. ``data`` is a zero-copy view valid only until the batch is released."""
+    """A received packet. ``data`` is a zero-copy view valid only until the batch is released;
+    ``payload()`` returns a copy as bytes."""
 
-    def __init__(self, raw):
-        self.conn, self.id, self.sequence = raw.conn, raw.packet_id, raw.sequence
-        self._view = None
-        if raw.length:
-            buf = (ctypes.c_char * raw.length).from_address(raw.data)
-            self._view = memoryview(buf).cast("B")
-        else:
-            self._view = memoryview(b"")
+    __slots__ = ("conn", "id", "sequence", "_ptr", "_len", "_batch")
+
+    def __init__(self, conn, packet_id, sequence, ptr, length, batch):
+        self.conn, self.id, self.sequence = conn, packet_id, sequence
+        self._ptr, self._len, self._batch = ptr, length, batch
 
     @property
     def data(self):
-        if self._view is None:
-            raise ValueError("the packet was released: copy bytes(packet.data) to keep them")
-        return self._view
+        if self._batch.released:
+            raise ValueError("the packet was released: copy it with packet.payload() to keep it")
+        if not self._len:
+            return memoryview(b"")
+        view = memoryview((ctypes.c_char * self._len).from_address(self._ptr)).cast("B")
+        self._batch.views.append(view)  # invalidated on release
+        return view
+
+    def payload(self):
+        """The payload as bytes (a copy, so it stays valid after the release)."""
+        if self._batch.released:
+            raise ValueError("the packet was released")
+        return ctypes.string_at(self._ptr, self._len) if self._len else b""
 
     def values(self):
         """The decoded fields (registry packets only)."""
-        return decode(self.id, self.data)
+        return decode(self.id, self.payload())
 
     @property
     def reason(self):
         """For DX_SYS_DISCONNECTED: 0 for a normal close, a negative DX_ERR_* otherwise."""
-        return struct.unpack("<i", self.data)[0]
+        return struct.unpack("<i", self.payload())[0]
 
-    def _invalidate(self):
-        view, self._view = self._view, None
-        if view is not None:
-            try:
-                view.release()
-            except BufferError:  # the user still holds a slice: it will not be reachable via us
-                pass
+
+# The array of dx_packet that dx_poll fills is decoded in one go with struct (much faster than
+# reading ctypes fields one by one): conn, sequence, data pointer, length, id, flags, reserved.
+_PTR = "Q" if ctypes.sizeof(ctypes.c_void_p) == 8 else "I"
+_RECORD = struct.Struct("<II" + _PTR + "IHBB" + ("4x" if ctypes.sizeof(_ffi.Packet) == 28 else ""))
+assert _RECORD.size == ctypes.sizeof(_ffi.Packet), "dx_packet layout mismatch"
+_OUT = struct.Struct("<IHH" + _PTR + "I" + ("4x" if _PTR == "Q" else ""))  # conn, id, reserved, data, length
+assert _OUT.size == ctypes.sizeof(_ffi.Outgoing), "dx_outgoing layout mismatch"
 
 
 class _Batch:
     """Packets of one poll. Use it in a ``with`` block: they are released when it ends."""
 
-    def __init__(self, ctx, packets):
-        self._ctx, self.packets = ctx, packets
+    def __init__(self, ctx, raw, n):
+        self._ctx, self.released, self.views = ctx, False, []
+        mv = memoryview(raw).cast("B")[: n * _RECORD.size]
+        self.packets = [Packet(c, i, s, ptr, ln, self) for c, s, ptr, ln, i, _f, _r in _RECORD.iter_unpack(mv)]
 
     def __iter__(self):
         return iter(self.packets)
@@ -170,11 +181,16 @@ class _Batch:
         self.release()
 
     def release(self):
+        if self.released:
+            return
+        self.released = True
+        for view in self.views:
+            try:
+                view.release()
+            except BufferError:  # the user still holds a slice: it will not be reachable via us
+                pass
         if self.packets:
-            for p in self.packets:
-                p._invalidate()
             _lib.dx_release(self._ctx, len(self.packets))
-            self.packets = []
 
 
 class Context:
@@ -193,7 +209,9 @@ class Context:
         if not self._ctx:
             raise Error(-18)  # DX_ERR_NO_MEMORY: invalid settings or out of memory
         self._finalizer = weakref.finalize(self, _lib.dx_destroy, self._ctx)
-        self._callbacks = {}  # keeps ctypes callbacks alive as long as the context
+        self._handlers = {}
+        self._hooks = (None, None, None, None)
+        self._before_send = None
 
     def close(self):
         """Frees the context now (also done automatically when the object is collected)."""
@@ -218,16 +236,54 @@ class Context:
         return conn.value
 
     def send(self, conn, packet_id, data=b""):
-        """Sends a payload (bytes). Raises Error(-14) if the send buffer is full."""
-        _check(_lib.dx_send(self._ctx, conn, packet_id, bytes(data), len(data)))
+        """Queues a payload (written at the next poll/dispatch, or by flush). Raises Error(-14)
+        if the send buffer is full, Error(-22) if the before_send hook refuses it."""
+        _check(self._raw_send(conn, packet_id, data))
 
     def try_send(self, conn, packet_id, data=b""):
         """Like send, but returns False instead of raising when the send buffer is full."""
-        rc = _lib.dx_send(self._ctx, conn, packet_id, bytes(data), len(data))
+        rc = self._raw_send(conn, packet_id, data)
         if rc == WOULD_BLOCK:
             return False
         _check(rc)
         return True
+
+    def send_many(self, packets):
+        """Sends [(conn, packet_id, data), ...] with ONE call into the library (the cheap way to
+        answer a whole batch). `data` is bytes-like, or a received Packet to send its payload back
+        without copying (before its batch is released). Returns how many were queued; stops at
+        the first that fails."""
+        if self._before_send:
+            packets = [p for p in packets if not self._before_send(p[0], p[1], bytes(p[2]))]
+        n = len(packets)
+        if n == 0:
+            return 0
+        # All payloads go into one buffer; each record points at its slice of it.
+        # A received Packet can be sent back as it is (no copy: its bytes are still in the
+        # library's ring until the batch is released). Other payloads go into one buffer.
+        blob = b"".join(p[2] for p in packets if not isinstance(p[2], Packet))
+        base = ctypes.cast(ctypes.c_char_p(blob), ctypes.c_void_p).value or 0
+        out = bytearray(n * _OUT.size)
+        offset = 0
+        for i, (conn, pid, data) in enumerate(packets):
+            if isinstance(data, Packet):
+                _OUT.pack_into(out, i * _OUT.size, conn, pid, 0, data._ptr, data._len)
+                continue
+            length = len(data)
+            _OUT.pack_into(out, i * _OUT.size, conn, pid, 0, base + offset, length)
+            offset += length
+        records = (_ffi.Outgoing * n).from_buffer(out)
+        return _check(_lib.dx_send_batch(self._ctx, records, n))
+
+    def flush(self):
+        """Writes queued packets now (only needed when no poll/dispatch follows)."""
+        _check(_lib.dx_flush(self._ctx))
+
+    def _raw_send(self, conn, packet_id, data):
+        if self._before_send and self._before_send(conn, packet_id, bytes(data)):
+            return -22  # DX_ERR_REJECTED
+        data = bytes(data)
+        return _lib.dx_send(self._ctx, conn, packet_id, data, len(data))
 
     def close_connection(self, conn):
         _check(_lib.dx_close(self._ctx, conn))
@@ -236,44 +292,40 @@ class Context:
         """Returns a batch; use ``with ctx.poll(100) as batch:`` so it is released afterwards."""
         raw = (_ffi.Packet * max_packets)()
         n = _check(_lib.dx_poll(self._ctx, raw, max_packets, timeout_ms))
-        return _Batch(self._ctx, [Packet(raw[i]) for i in range(n)])
+        return _Batch(self._ctx, raw, n)
 
     def on_packet(self, packet_id, fn):
-        """Calls ``fn(ctx, packet)`` for packets with this id (0 = default); None removes it."""
+        """Calls ``fn(ctx, packet)`` for packets with this id (0 = default) during dispatch;
+        None removes it."""
         if fn is None:
-            self._callbacks.pop(("h", packet_id), None)
-            _check(_lib.dx_on_packet(self._ctx, packet_id, _ffi.HANDLER(), None))
-            return
-
-        def trampoline(_c, p, _u):
-            fn(self, Packet(p.contents))
-
-        cb = _ffi.HANDLER(trampoline)
-        self._callbacks[("h", packet_id)] = cb
-        _check(_lib.dx_on_packet(self._ctx, packet_id, cb, None))
+            self._handlers.pop(packet_id, None)
+        else:
+            self._handlers[packet_id] = fn
 
     def set_hooks(self, on_connect=None, on_disconnect=None, on_error=None, before_send=None,
                   after_recv=None):
         """Installs hooks; before_send/after_recv return True to reject/drop the packet."""
-        h = _ffi.Hooks()
-        h.size = ctypes.sizeof(h)
-        cbs = {}
-        if on_connect:
-            cbs["on_connect"] = _ffi.ON_CONNECT(lambda _c, conn, _u: on_connect(conn))
-        if on_disconnect:
-            cbs["on_disconnect"] = _ffi.ON_DISCONNECT(lambda _c, conn, r, _u: on_disconnect(conn, r))
-        if on_error:
-            cbs["on_error"] = _ffi.ON_ERROR(lambda _c, conn, e, _u: on_error(conn, e))
-        if before_send:
-            cbs["before_send"] = _ffi.BEFORE_SEND(
-                lambda _c, conn, pid, d, n, _u: 1 if before_send(conn, pid, ctypes.string_at(d, n) if n else b"") else 0)
-        if after_recv:
-            cbs["after_recv"] = _ffi.AFTER_RECV(lambda _c, p, _u: 1 if after_recv(Packet(p.contents)) else 0)
-        for name, cb in cbs.items():
-            setattr(h, name, cb)
-        self._callbacks["hooks"] = cbs
-        _check(_lib.dx_set_hooks(self._ctx, ctypes.byref(h)))
+        self._hooks = (on_connect, on_disconnect, on_error, after_recv)
+        self._before_send = before_send
 
-    def dispatch(self, timeout_ms=0):
-        """Like poll, but runs handlers and hooks, then releases. Returns the entries handled."""
-        return _check(_lib.dx_dispatch(self._ctx, timeout_ms))
+    def dispatch(self, timeout_ms=0, max_packets=64):
+        """Polls once, runs hooks and handlers for the whole batch (in Python: one call into the
+        library per batch, not per packet), then releases it. Returns the entries handled."""
+        on_connect, on_disconnect, on_error, after_recv = self._hooks
+        handlers = self._handlers
+        with self.poll(timeout_ms, max_packets) as batch:
+            for p in batch:
+                if p.id == SYS_CONNECTED:
+                    if on_connect:
+                        on_connect(p.conn)
+                elif p.id == SYS_DISCONNECTED:
+                    reason = p.reason
+                    if reason < 0 and on_error:
+                        on_error(p.conn, reason)
+                    if on_disconnect:
+                        on_disconnect(p.conn, reason)
+                elif not (after_recv and after_recv(p)):
+                    fn = handlers.get(p.id) or handlers.get(0)
+                    if fn:
+                        fn(self, p)
+            return len(batch)

@@ -1,9 +1,8 @@
 // index.ts - Node.js / TypeScript API of Duplex, on top of the native addon.
 // SPDX-License-Identifier: MIT
 //
-// In plain words: Context owns the engine; poll() returns a Batch whose packets point straight
-// into the library's memory and become unreadable (their buffers are detached) when you call
-// batch.release(); dispatch() runs your handlers and hooks and releases for you. Errors are
+// Context owns the engine; poll() returns a Batch (one crossing into the native
+// library per batch) whose packets become unreadable after batch.release(); dispatch() runs your handlers and hooks and releases for you. Errors are
 // thrown as DuplexError carrying the library's code.
 // Run it with Node 22.6+ (`node --experimental-strip-types`) or Node 24, which run .ts directly.
 import { createRequire } from "node:module";
@@ -16,9 +15,9 @@ export type { Value };
 const require = createRequire(import.meta.url);
 const native = require(process.env.DUPLEX_ADDON ?? new URL("./duplex.node", import.meta.url).pathname);
 
-// Interface version this binding was written for: major 1, minor 4.
+// Interface version this binding was written for: major 2.
 const abi: number = native.abiVersion();
-if (abi >> 16 !== 1 || ((abi >> 8) & 0xff) < 4) throw new Error("incompatible libduplex version");
+if (abi >> 16 !== 2) throw new Error("incompatible libduplex version");
 
 export const SYS_CONNECTED = 0x7f01;
 export const SYS_DISCONNECTED = 0x7f02;
@@ -36,41 +35,48 @@ export class Packet {
   readonly conn: number;
   readonly id: number;
   readonly sequence: number;
-  #raw: { data: Uint8Array };
-  #batch: { released: boolean };
+  #batch: Batch;
+  #offset: number;
+  #length: number;
 
-  constructor(raw: { conn: number; id: number; sequence: number; data: Uint8Array }, batch: { released: boolean }) {
-    this.conn = raw.conn;
-    this.id = raw.id;
-    this.sequence = raw.sequence;
-    this.#raw = raw;
+  constructor(batch: Batch, conn: number, id: number, sequence: number, offset: number, length: number) {
     this.#batch = batch;
+    this.conn = conn;
+    this.id = id;
+    this.sequence = sequence;
+    this.#offset = offset;
+    this.#length = length;
   }
 
-  /** Zero-copy view of the payload. Throws after the batch was released. */
+  /** The payload. Throws after the batch was released (copy it with data.slice() to keep it). */
   get data(): Uint8Array {
     if (this.#batch.released) throw new Error("the packet was released: copy data.slice() to keep it");
-    return this.#raw.data;
+    return this.#batch.payloads.subarray(this.#offset, this.#offset + this.#length);
   }
   values(): Value[] {
     return decode(this.id, this.data);
   }
   /** For SYS_DISCONNECTED: 0 for a normal close, a negative DX_ERR_* otherwise. */
   get reason(): number {
-    return new DataView(this.data.buffer, this.data.byteOffset, 4).getInt32(0, true);
+    const d = this.data;
+    return new DataView(d.buffer, d.byteOffset, 4).getInt32(0, true);
   }
 }
 
 export class Batch {
-  readonly packets: Packet[];
+  readonly packets: Packet[] = [];
   released = false;
+  /** @internal all payloads of the batch, in order */
+  payloads: Uint8Array;
   #ctx: any;
-  #raw: unknown[];
 
-  constructor(ctx: any, raw: any[]) {
+  constructor(ctx: any, meta: Uint32Array, payloads: Uint8Array) {
     this.#ctx = ctx;
-    this.#raw = raw;
-    this.packets = raw.map((r) => new Packet(r, this));
+    this.payloads = payloads;
+    for (let i = 0, offset = 0; i < meta.length; i += 4) {
+      this.packets.push(new Packet(this, meta[i], meta[i + 1], meta[i + 2], offset, meta[i + 3]));
+      offset += meta[i + 3];
+    }
   }
   [Symbol.iterator]() {
     return this.packets[Symbol.iterator]();
@@ -82,7 +88,7 @@ export class Batch {
   release() {
     if (this.released) return;
     this.released = true;
-    native.release(this.#ctx, this.#raw);
+    native.release(this.#ctx, this.packets.length);
   }
   [Symbol.dispose]() {
     this.release();
@@ -106,7 +112,7 @@ export class Context {
   #handlers = new Map<number, Handler>();
   #hooks: Hooks = {};
 
-  constructor(settings: { maxConns?: number; maxPayload?: number; rxQueue?: number; rxRingBytes?: number } = {}) {
+  constructor(settings: { maxConns?: number; maxPayload?: number; rxQueue?: number; rxRingBytes?: number; idleTimeoutMs?: number } = {}) {
     this.#ctx = native.create(settings);
   }
 
@@ -143,6 +149,21 @@ export class Context {
     if (rc < 0) throw new DuplexError(rc);
     return true;
   }
+  /** Sends [[conn, id, data], ...] with ONE call into the library; returns how many were queued. */
+  sendMany(packets: [number, number, Uint8Array][]): number {
+    const allowed = this.#hooks.beforeSend ? packets.filter(([c, id, d]) => !this.#hooks.beforeSend!(c, id, d)) : packets;
+    const meta = new Uint32Array(allowed.length * 3);
+    allowed.forEach(([conn, id, data], i) => {
+      meta[3 * i] = conn;
+      meta[3 * i + 1] = id;
+      meta[3 * i + 2] = data.length;
+    });
+    return check(native.sendBatch(this.#ctx, meta, Buffer.concat(allowed.map((p) => p[2]))));
+  }
+  /** Writes queued packets now (only needed when no poll/dispatch follows). */
+  flush() {
+    check(native.flush(this.#ctx));
+  }
   #rawSend(conn: number, id: number, data: Uint8Array): number {
     if (this.#hooks.beforeSend?.(conn, id, data)) return REJECTED;
     return native.send(this.#ctx, conn, id, data);
@@ -152,7 +173,7 @@ export class Context {
   poll(timeoutMs = 0, max = 64): Batch {
     const raw = native.poll(this.#ctx, timeoutMs, max);
     if (typeof raw === "number") throw new DuplexError(raw);
-    return new Batch(this.#ctx, raw);
+    return new Batch(this.#ctx, raw[0], raw[1]);
   }
 
   /** Calls fn for packets with this id (0 = default handler); undefined removes it. */

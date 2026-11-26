@@ -153,27 +153,47 @@ static void test_send_errors(void)
     dx_destroy(C.ctx);
 }
 
-static void test_hooks_and_tunnel_errors(void)
+/* Waits for the CONNECTED event of the connection the context accepted (not its own outgoing). */
+static uint32_t accept_one(dx_ctx* ctx, const uint32_t* outgoing, int n_out)
 {
-    dx_ctx* ctx = dx_create(NULL);
-    dx_hooks short_hooks = {4, 0, NULL, NULL, NULL, NULL, NULL, NULL};
-    CHECK(dx_set_hooks(NULL, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_set_hooks(ctx, &short_hooks) == DX_ERR_INVALID_ARG); /* structure too short */
-    CHECK(dx_set_hooks(ctx, NULL) == DX_OK);                      /* NULL removes every hook */
-    CHECK(dx_on_packet(NULL, DX_PKT_PING, NULL, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_on_packet(ctx, 0x1234, NULL, NULL) == DX_ERR_UNKNOWN_ID);
+    uint64_t t0 = test_now_ms();
+    while (test_now_ms() - t0 < 5000) {
+        dx_packet pk[16];
+        int n = dx_poll(ctx, pk, 16, 1);
+        for (int i = 0; i < n; i++) {
+            int mine = 0;
+            for (int k = 0; k < n_out; k++)
+                mine |= pk[i].conn == outgoing[k];
+            if (pk[i].packet_id == DX_SYS_CONNECTED && !mine) {
+                uint32_t h = pk[i].conn;
+                dx_release(ctx, n);
+                return h;
+            }
+        }
+        dx_release(ctx, n);
+    }
+    return 0;
+}
 
+static void test_tunnel_errors(void)
+{
+    CHECK(dx_flush(NULL) == DX_ERR_INVALID_ARG);
+    dx_ctx* ctx = dx_create(NULL);
     dx_listen(ctx, "127.0.0.1", 0);
-    uint32_t a, b, c;
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &a);
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &b);
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &c);
-    CHECK(dx_tunnel(NULL, a, b, NULL, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, a, a, NULL, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, 0, b, NULL, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, a, 0xBEEF0001u, NULL, NULL) == DX_ERR_BAD_CONN);
-    CHECK(dx_tunnel(ctx, a, b, NULL, NULL) == DX_OK);
-    CHECK(dx_tunnel(ctx, a, c, NULL, NULL) == DX_ERR_INVALID_ARG); /* a is already tunnelled */
+    uint32_t out[2];
+    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[0]);
+    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[1]);
+    uint32_t acc = accept_one(ctx, out, 2);
+    uint16_t ids[DX_TUNNEL_MAX_DROP + 1] = {0};
+    CHECK(acc != 0);
+    CHECK(dx_tunnel(NULL, out[0], acc, NULL, 0) == DX_ERR_INVALID_ARG);
+    CHECK(dx_tunnel(ctx, out[0], out[0], NULL, 0) == DX_ERR_INVALID_ARG);
+    CHECK(dx_tunnel(ctx, out[0], out[1], NULL, 0) == DX_ERR_INVALID_ARG); /* both outgoing */
+    CHECK(dx_tunnel(ctx, out[0], acc, ids, DX_TUNNEL_MAX_DROP + 1) == DX_ERR_INVALID_ARG);
+    CHECK(dx_tunnel(ctx, out[0], acc, NULL, 2) == DX_ERR_INVALID_ARG);
+    CHECK(dx_tunnel(ctx, out[0], 0xBEEF0001u, NULL, 0) == DX_ERR_BAD_CONN);
+    CHECK(dx_tunnel(ctx, out[0], acc, ids, 1) == DX_OK);
+    CHECK(dx_tunnel(ctx, out[1], acc, NULL, 0) == DX_ERR_INVALID_ARG); /* acc is already relayed */
     dx_destroy(ctx);
 
     dx_config cfg;
@@ -181,23 +201,41 @@ static void test_hooks_and_tunnel_errors(void)
     cfg.max_tunnels = 1;
     ctx = dx_create(&cfg);
     dx_listen(ctx, "127.0.0.1", 0);
-    for (int i = 0; i < 4; i++) {
-        uint32_t h[4];
-        dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &h[i]);
-        if (i == 3) {
-            CHECK(dx_tunnel(ctx, h[0], h[1], NULL, NULL) == DX_OK);
-            CHECK(dx_tunnel(ctx, h[2], h[3], NULL, NULL) ==
-                  DX_ERR_LIMIT); /* table of one is full */
-        }
+    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[0]);
+    uint32_t a1 = accept_one(ctx, out, 1);
+    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[1]);
+    uint32_t a2 = accept_one(ctx, out, 2);
+    CHECK(dx_tunnel(ctx, out[0], a1, NULL, 0) == DX_OK);
+    CHECK(dx_tunnel(ctx, out[1], a2, NULL, 0) == DX_ERR_LIMIT); /* table of one is full */
+    dx_destroy(ctx);
+}
+
+/* Regression: dx_poll must honour short timeouts even after a long pause between calls (it once
+ * measured the remaining time from a stale clock and waited up to 100 ms instead of 1 ms). */
+static void test_poll_timeout(void)
+{
+    dx_ctx* ctx = dx_create(NULL);
+    dx_packet pk[4];
+    dx_poll(ctx, pk, 4, 0);
+    uint64_t pause = test_now_ms();
+    while (test_now_ms() - pause < 300) {
+    } /* a long gap without polling */
+    uint64_t worst = 0;
+    for (int i = 0; i < 20; i++) {
+        uint64_t t0 = test_now_ms();
+        CHECK(dx_poll(ctx, pk, 4, 1) == 0);
+        if (test_now_ms() - t0 > worst) worst = test_now_ms() - t0;
     }
+    CHECK(worst < 50); /* 1 ms asked; generous margin for a loaded machine, far below 100 ms */
     dx_destroy(ctx);
 }
 
 int main(void)
 {
+    test_poll_timeout();
     test_create_failures();
     test_listen_and_connect_errors();
     test_send_errors();
-    test_hooks_and_tunnel_errors();
+    test_tunnel_errors();
     return dx_test_done();
 }

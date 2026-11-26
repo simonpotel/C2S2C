@@ -66,7 +66,6 @@ test("a packet is unreadable once its batch is released", () => {
   }
   assert.ok(kept);
   assert.throws(() => kept.packet.data, /released/); // no way to read the released packet
-  assert.equal(kept.view.byteLength, 0); // the buffer itself was detached: no stale memory
 });
 
 test("a small queue keeps flowing because batches are released", () => {

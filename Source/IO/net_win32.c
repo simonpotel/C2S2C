@@ -10,7 +10,7 @@
 #include "net.h"
 
 /*
- * In plain words: Windows sockets are almost the BSD ones with different names and error
+ * Windows sockets are almost the BSD ones with different names and error
  * reporting. This file mirrors net.c so the rest of the library never notices the difference.
  * Winsock handles are kernel handles whose values fit in 32 bits in practice, so they travel as
  * `int` like POSIX file descriptors do.

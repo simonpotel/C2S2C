@@ -13,7 +13,7 @@
 #include "io.h"
 
 /*
- * In plain words: io_uring lets the program and the kernel exchange work through two shared
+ * Io_uring lets the program and the kernel exchange work through two shared
  * queues, so many operations cost a single system call. Here it is used the same way as epoll:
  * we ask the kernel "tell me when this socket is readable/writable" (a POLL_ADD request) and
  * read the answers from the completion queue. A poll request answers once, so after each answer

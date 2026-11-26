@@ -146,7 +146,7 @@ if(WIN32)
 endif()
 
 dx_net_test(test_faults Faults Faults)
-dx_net_test(test_hooks Integration Integration)
+dx_net_test(test_tunnel Integration Integration)
 dx_net_test(test_threads Concurrency Concurrency)
 dx_net_test(test_stress Stress Stress)
 # Short by default; `DX_STRESS_SECONDS=600 ctest -L Stress` runs the long version.
@@ -157,13 +157,7 @@ target_link_libraries(test_threads PRIVATE Threads::Threads)
 add_test(NAME source_rules COMMAND sh ${CMAKE_SOURCE_DIR}/Tools/Scripts/check_source_rules.sh)
 set_tests_properties(source_rules PROPERTIES LABELS Memory)
 
-# The C chat example, run end to end (server and clients as separate processes).
-add_test(NAME example_chat_c COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
-         $<TARGET_FILE:chat_server> $<TARGET_FILE:chat_client>)
-set_tests_properties(example_chat_c PROPERTIES LABELS Examples TIMEOUT 60)
-set_property(GLOBAL APPEND PROPERTY DX_IMPLS "C|$<TARGET_FILE:chat_server>|$<TARGET_FILE:chat_client>")
-
-# C++ binding: its own tests, plus the C++ chat example run against the C++ server.
+# C++ binding: its own tests.
 if(CMAKE_CXX_COMPILER)
     add_executable(test_cpp Bindings/Cpp/test_cpp.cpp)
     target_include_directories(test_cpp PRIVATE ${CMAKE_SOURCE_DIR}/Bindings/Cpp ${CMAKE_SOURCE_DIR}/Generated/Cpp
@@ -173,10 +167,6 @@ if(CMAKE_CXX_COMPILER)
     add_test(NAME test_cpp COMMAND test_cpp)
     set_tests_properties(test_cpp PROPERTIES LABELS Bindings TIMEOUT 60)
 
-    add_test(NAME example_chat_cpp COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/Examples/chat_example.sh
-             $<TARGET_FILE:chat_server_cpp> $<TARGET_FILE:chat_client_cpp>)
-    set_tests_properties(example_chat_cpp PROPERTIES LABELS Examples TIMEOUT 60)
-    set_property(GLOBAL APPEND PROPERTY DX_IMPLS "Cpp|$<TARGET_FILE:chat_server_cpp>|$<TARGET_FILE:chat_client_cpp>")
 endif()
 
 # Python binding: a copy of the package in the layout `pip install` would give, so tests and
@@ -301,7 +291,7 @@ if(DX_WASM_CLANG AND DX_WASM_LD AND TEST test_node)
     add_test(NAME test_web COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings --test
              ${CMAKE_CURRENT_SOURCE_DIR}/Wasm/test_web.ts)
     set_tests_properties(test_web PROPERTIES LABELS Wasm TIMEOUT 120
-                         ENVIRONMENT "${DX_WASM_ENV};DX_CHAT_SERVER=$<TARGET_FILE:chat_server>")
+                         ENVIRONMENT "${DX_WASM_ENV};${DX_NODE_ENV}")
 endif()
 
 # Cross-language matrix: every client implementation against every server implementation, same
@@ -360,4 +350,18 @@ endif()
 if(TEST test_node)
     add_test(NAME ffi_node COMMAND ${DX_NODE_BIN} --experimental-strip-types --no-warnings ${CMAKE_SOURCE_DIR}/Bench/Ffi/bench_ffi.ts)
     set_tests_properties(ffi_node PROPERTIES LABELS Performance TIMEOUT 60 ENVIRONMENT "${DX_NODE_ENV}")
+endif()
+
+# Service benchmark: the same ping/pong service written from scratch in each language and on top
+# of libduplex, driven by one load generator and one hostile-traffic checker (all in C).
+# Run it with Tools/Scripts/bench_service.sh <build dir> (see DOCUMENTATION.md, Performance).
+add_executable(bench_service_c ${CMAKE_SOURCE_DIR}/Bench/Service/C/server.c)
+add_executable(loadgen ${CMAKE_SOURCE_DIR}/Bench/Service/C/loadgen.c)
+foreach(b bench_service_c loadgen)
+    target_link_libraries(${b} PRIVATE duplex)
+    dx_enable_warnings(${b})
+endforeach()
+if(NOT WIN32)
+    add_executable(hostile ${CMAKE_SOURCE_DIR}/Bench/Service/C/hostile.c)
+    dx_enable_warnings(hostile)
 endif()

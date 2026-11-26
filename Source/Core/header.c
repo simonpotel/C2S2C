@@ -1,7 +1,7 @@
 /* header.c - validation, encoding and decoding of the 14-byte packet header.
  * SPDX-License-Identifier: MIT */
 /*
- * In plain words: every packet starts with a 14-byte "envelope label" (the header) that says
+ * Every packet starts with a 14-byte "envelope label" (the header) that says
  * what kind of packet it is, how big its content is and which way it travels. This file turns
  * that label into bytes (encode) and bytes back into a label (decode), and refuses any label
  * that breaks the rules. Rules and byte layout: DOCUMENTATION.md sections 3 and 4.

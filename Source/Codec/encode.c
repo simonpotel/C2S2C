@@ -7,7 +7,7 @@
 #include "utf8.h"
 
 /*
- * In plain words: a writer is a cursor over a buffer you provide. Each dx_w_* call appends
+ * A writer is a cursor over a buffer you provide. Each dx_w_* call appends
  * one field. If something goes wrong (buffer full, bad text) the error is remembered and
  * every later call becomes a no-op, so callers write all fields and check once at the end.
  * Nothing here allocates.

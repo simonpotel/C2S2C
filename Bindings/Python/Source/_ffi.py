@@ -1,6 +1,6 @@
 """Low-level ctypes description of the Duplex C API (SPDX-License-Identifier: MIT).
 
-In plain words: this file tells Python what the functions and structures of libduplex look like,
+This file tells Python what the functions and structures of libduplex look like,
 and loads the shared library. Everything user-facing is in __init__.py.
 """
 import ctypes
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Version of the C interface this binding was written for: (major, minor).
-EXPECTED_ABI = (1, 4)  # minimum minor version: later minors only add functions
+EXPECTED_ABI = (2, 0)  # minimum minor version: later minors only add functions
 
 
 def _candidates():
@@ -64,20 +64,9 @@ class Packet(ctypes.Structure):
 Ctx = ctypes.c_void_p
 PacketPtr = ctypes.POINTER(Packet)
 
-HANDLER = ctypes.CFUNCTYPE(None, Ctx, PacketPtr, ctypes.c_void_p)
-ON_CONNECT = ctypes.CFUNCTYPE(None, Ctx, ctypes.c_uint32, ctypes.c_void_p)
-ON_DISCONNECT = ctypes.CFUNCTYPE(None, Ctx, ctypes.c_uint32, ctypes.c_int, ctypes.c_void_p)
-BEFORE_SEND = ctypes.CFUNCTYPE(ctypes.c_int, Ctx, ctypes.c_uint32, ctypes.c_uint16,
-                               ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p)
-AFTER_RECV = ctypes.CFUNCTYPE(ctypes.c_int, Ctx, PacketPtr, ctypes.c_void_p)
-ON_ERROR = ctypes.CFUNCTYPE(None, Ctx, ctypes.c_uint32, ctypes.c_int, ctypes.c_void_p)
-
-
-class Hooks(ctypes.Structure):
-    _fields_ = [("size", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
-                ("on_connect", ON_CONNECT), ("on_disconnect", ON_DISCONNECT),
-                ("before_send", BEFORE_SEND), ("after_recv", AFTER_RECV),
-                ("on_error", ON_ERROR), ("user", ctypes.c_void_p)]
+class Outgoing(ctypes.Structure):
+    _fields_ = [("conn", ctypes.c_uint32), ("packet_id", ctypes.c_uint16), ("reserved", ctypes.c_uint16),
+                ("data", ctypes.c_char_p), ("length", ctypes.c_uint32)]
 
 
 def declare(lib):
@@ -98,7 +87,6 @@ def declare(lib):
     sig("dx_release", None, Ctx, c_int)
     sig("dx_send", c_int, Ctx, u32, u16, ctypes.c_char_p, u32)
     sig("dx_close", c_int, Ctx, u32)
-    sig("dx_on_packet", c_int, Ctx, u16, HANDLER, ctypes.c_void_p)
-    sig("dx_set_hooks", c_int, Ctx, ctypes.POINTER(Hooks))
-    sig("dx_dispatch", c_int, Ctx, c_int)
+    sig("dx_send_batch", c_int, Ctx, ctypes.POINTER(Outgoing), c_int)
+    sig("dx_flush", c_int, Ctx)
     sig("dx_payload_validate", c_int, u16, ctypes.c_char_p, u32)

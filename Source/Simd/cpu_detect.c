@@ -15,7 +15,7 @@
 #endif
 
 /*
- * In plain words: the checksum has one portable version and, on CPUs that support it, a much
+ * The checksum has one portable version and, on CPUs that support it, a much
  * faster hardware version. We ask the CPU once what it supports (at run time, so one binary
  * works everywhere) and remember the best function in `chosen`. Two threads asking at the same
  * time just compute the same answer twice, which is harmless, so a plain atomic pointer is enough.

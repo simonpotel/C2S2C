@@ -44,7 +44,7 @@ set(DX_SOURCES Source/Core/version.c Source/Core/header.c Source/Codec/encode.c
     Source/Core/Conn/receiving.c Source/Core/Conn/events.c Source/Core/Conn/maintenance.c
     Source/Simd/cpu_detect.c Source/Simd/crc32_generic.c Source/Simd/crc32_sse42.c
     Source/Simd/crc32_armv8.c Source/Simd/crc32_none.c
-    Source/Core/Hooks/hooks.c Source/Core/Hooks/dispatch.c Source/Core/Hooks/tunnel.c
+    Source/Core/Ctx/tunnel.c
     Generated/C/dx_registry.c)
 
 # Socket layer: Winsock on Windows, BSD sockets elsewhere.
@@ -78,10 +78,6 @@ foreach(t duplex duplex_static)
         target_link_libraries(${t} PUBLIC ws2_32) # Winsock
     endif()
 endforeach()
-
-if(NOT WIN32)
-    add_subdirectory(Examples)
-endif()
 
 enable_testing()
 add_subdirectory(Tests)

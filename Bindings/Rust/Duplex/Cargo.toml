@@ -27,3 +27,11 @@ path = "../../../Tests/Bindings/Rust/test_rust.rs"
 [[bin]]
 name = "bench_ffi_rust"
 path = "../../../Bench/Ffi/bench_ffi.rs"
+
+[[bin]]
+name = "bench_service_duplex"
+path = "../../../Bench/Service/Rust/server_duplex.rs"
+
+[[bin]]
+name = "bench_service_naive"
+path = "../../../Bench/Service/Rust/server_naive.rs"
