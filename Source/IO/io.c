@@ -4,28 +4,28 @@
 
 #include <stddef.h>
 
-const dx_io_ops* dx_io_get(uint32_t backend)
+const c2s2c_io_ops* c2s2c_io_get(uint32_t backend)
 {
     switch (backend) {
-    case DX_BACKEND_AUTO:
+    case C2S2C_BACKEND_AUTO:
 #if defined(__linux__)
-        return &dx_io_epoll;
+        return &c2s2c_io_epoll;
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-        return &dx_io_kqueue;
+        return &c2s2c_io_kqueue;
 #else
-        return &dx_io_poll;
+        return &c2s2c_io_poll;
 #endif
-    case DX_BACKEND_POLL:
-        return &dx_io_poll;
+    case C2S2C_BACKEND_POLL:
+        return &c2s2c_io_poll;
 #if defined(__linux__)
-    case DX_BACKEND_EPOLL:
-        return &dx_io_epoll;
-    case DX_BACKEND_URING:
-        return &dx_io_uring; /* may still fail at dx_create if the kernel refuses io_uring */
+    case C2S2C_BACKEND_EPOLL:
+        return &c2s2c_io_epoll;
+    case C2S2C_BACKEND_URING:
+        return &c2s2c_io_uring; /* may still fail at c2s2c_create if the kernel refuses io_uring */
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-    case DX_BACKEND_KQUEUE:
-        return &dx_io_kqueue;
+    case C2S2C_BACKEND_KQUEUE:
+        return &c2s2c_io_kqueue;
 #endif
     default:
         return NULL; /* not available on this platform */

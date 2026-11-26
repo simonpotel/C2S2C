@@ -1,1 +1,1 @@
-{"schema": "array<u8>", "error": "DX_ERR_TRUNCATED"}
+{"schema": "array<u8>", "error": "C2S2C_ERR_TRUNCATED"}

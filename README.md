@@ -1,4 +1,4 @@
-# Duplex
+# C2S2C
 
 ![C11](https://img.shields.io/badge/C11-00599C?style=for-the-badge&logo=c&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
@@ -7,6 +7,9 @@
 
 **One packet-protocol engine in C, used from Rust, Python, Node and the browser, instead of
 rewriting it in every project.**
+
+*C2S2C* reads "client to server to client": packets travel both ways, client to server (CTOS) and
+server to client (STOC).
 
 **How it works:**
 
@@ -30,8 +33,8 @@ a TCP stream into packets, checking every header field, refusing hostile input, 
 packets, buffering, an event loop. It is tedious and slow to write, easy to get subtly wrong, and
 it is written again for each language of the stack.
 
-Duplex writes it **once**, in C11, and every language uses the same compiled library
-(`libduplex`) through a thin binding. Packets are defined once in `Registry/protocol.toml`.
+C2S2C writes it **once**, in C11, and every language uses the same compiled library
+(`libc2s2c`) through a thin binding. Packets are defined once in `Registry/protocol.toml`.
 
 ## The problem, as people meet it
 
@@ -43,14 +46,14 @@ The same questions come back on forums whenever someone writes this layer by han
 - [It's always TCP_NODELAY](https://news.ycombinator.com/item?id=40310896) (Hacker News): latency surprises from TCP's small-packet handling, told by game and network engineers.
 - [Message Framing](https://blog.stephencleary.com/2009/04/message-framing.html) (Stephen Cleary) and [Reading and Writing Packets](https://gafferongames.com/post/reading_and_writing_packets/) (Glenn Fiedler, games): the classic explanations of what you must build yourself.
 
-Every concept Duplex uses is sourced in [DOCUMENTATION.md, "Sources"](DOCUMENTATION.md#sources).
+Every concept C2S2C uses is sourced in [DOCUMENTATION.md, "Sources"](DOCUMENTATION.md#sources).
 
 ## What you gain
 
-The same ping/pong service, written from scratch in each language versus on top of Duplex
+The same ping/pong service, written from scratch in each language versus on top of C2S2C
 (`Tools/Scripts/bench_service.sh`, Apple silicon, loopback, 192 connections):
 
-| | Rewritten by hand | With Duplex |
+| | Rewritten by hand | With C2S2C |
 |---|---|---|
 | Code for the service | 48–82 lines **for one packet type** | 20–27 lines, every packet of the registry |
 | Validation (headers, direction, sequence, lengths, UTF-8, idle peers) | yours to write and maintain, per language | built in, identical everywhere |
@@ -61,7 +64,7 @@ The same ping/pong service, written from scratch in each language versus on top 
 | Verified by | your own tests | fuzzing, AddressSanitizer, ThreadSanitizer, property tests, CI on Linux/macOS/Windows |
 | Memory | allocates as it goes | reserved up front, no allocation while running |
 
-Python is faster with Duplex when it loops over batches (`poll` + `send_many`). A Python
+Python is faster with C2S2C when it loops over batches (`poll` + `send_many`). A Python
 function called for every packet (`dispatch`) is slower than a hand-written loop (374 000/s).
 
 ## Use cases
@@ -69,12 +72,12 @@ function called for every packet (`dispatch`) is slower than a hand-written loop
 Anywhere several programs exchange many small, typed messages over TCP and must not trust each
 other's bytes:
 
-| Use case | What travels | Why Duplex fits |
+| Use case | What travels | Why C2S2C fits |
 |---|---|---|
 | **Multiplayer games** | player inputs to the server (CTOS), world state and events to players (STOC) | thousands of connections per process, batched receive, grouped sends, a C++/Rust game server and a browser client sharing one packet list |
 | **Chat and real-time apps** | messages, presence, notifications | strict UTF-8 checks on every string, idle peers dropped, the same protocol in the web page through WebAssembly |
 | **Microservices in several languages** | internal requests and events between Rust, Python and Node services | one registry instead of one hand-written encoder per language; a field added once reaches every service |
-| **Proxies and gateways** | the traffic of a client, relayed to the real server | `dx_tunnel` relays inside the library, drops chosen packet types, and slows the sender instead of buffering without limit |
+| **Proxies and gateways** | the traffic of a client, relayed to the real server | `c2s2c_tunnel` relays inside the library, drops chosen packet types, and slows the sender instead of buffering without limit |
 | **Telemetry and IoT ingestion** | small readings from many devices | fixed memory, no allocation while running, malformed device data rejected with a precise reason |
 | **Low-latency feeds** (market data, simulations, robotics) | frequent small updates | sub-millisecond round trips on loopback, one write per connection per batch |
 
@@ -82,7 +85,7 @@ other's bytes:
 
 | Folder | Content |
 |---|---|
-| `Include/`, `Source/` | the C library: framing, validation, batched `dx_poll`, sockets (epoll, kqueue, io_uring, poll/WSAPoll), a native relay |
+| `Include/`, `Source/` | the C library: framing, validation, batched `c2s2c_poll`, sockets (epoll, kqueue, io_uring, poll/WSAPoll), a native relay |
 | `Registry/`, `Generated/` | the packet definitions, and the ids generated from them for each language |
 | `Bindings/` | Rust, Python, Node/TypeScript, C++, and a 6 KB WebAssembly build for browsers |
 | `Examples/` | the same chat server and client in Rust, Python and Node, and a web chat |
@@ -110,8 +113,8 @@ ctest --preset release                                     # every test this mac
 ```
 
 ```python
-import duplex, duplex_registry as reg              # Bindings/Python + Generated/Python
-ctx = duplex.Context(); ctx.listen("127.0.0.1", 0)
+import c2s2c, c2s2c_registry as reg              # Bindings/Python + Generated/Python
+ctx = c2s2c.Context(); ctx.listen("127.0.0.1", 0)
 while True:
     with ctx.poll(100) as batch:                    # many packets per call into the library
         ctx.send_many([(p.conn, reg.PONG, p) for p in batch if p.id == reg.PING])

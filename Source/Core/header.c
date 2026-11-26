@@ -8,7 +8,7 @@
  * It never allocates, does no I/O and keeps no state, so any thread can call it.
  */
 #include "../Codec/endian.h"
-#include "Duplex/duplex.h"
+#include "C2S2C/c2s2c.h"
 
 /*
  * Single validation routine shared by encode and decode, so a header we refuse to read is
@@ -16,60 +16,61 @@
  * Checks run cheapest and most fundamental first, so the returned error is the most
  * useful one (a wrong magic means "not our protocol", whatever the other fields say).
  */
-static int dx_header_check(const dx_header* h)
+static int c2s2c_header_check(const c2s2c_header* h)
 {
     /* 1. Not our protocol at all (or a desynchronised stream). */
-    if (h->magic != DX_MAGIC) return DX_ERR_BAD_MAGIC;
+    if (h->magic != C2S2C_MAGIC) return C2S2C_ERR_BAD_MAGIC;
 
     /* 2. Only protocol v1 is understood; a newer peer must be rejected, not misparsed. */
-    if (h->version != DX_PROTOCOL_VERSION) return DX_ERR_BAD_VERSION;
+    if (h->version != C2S2C_PROTOCOL_VERSION) return C2S2C_ERR_BAD_VERSION;
 
     /* 3. Reserved flag bits must be 0 so they can get a meaning later without ambiguity:
      *    an old reader sees them set and rejects, instead of silently ignoring them. */
-    if (h->flags & DX_FLAGS_RESERVED_MASK) return DX_ERR_BAD_FLAGS;
+    if (h->flags & C2S2C_FLAGS_RESERVED_MASK) return C2S2C_ERR_BAD_FLAGS;
 
     /* 4. Direction is stored twice (flag bit0 and id bit 15). They must agree: a mismatch
      *    means a client is sending a server-only packet (or the data is corrupt). */
-    if ((h->flags & DX_FLAG_STOC) != ((h->packet_id & DX_ID_STOC_BIT) ? DX_FLAG_STOC : 0u))
-        return DX_ERR_BAD_ID;
+    if ((h->flags & C2S2C_FLAG_STOC) != ((h->packet_id & C2S2C_ID_STOC_BIT) ? C2S2C_FLAG_STOC : 0u))
+        return C2S2C_ERR_BAD_ID;
 
     /* 5. Cap the payload so a hostile length field cannot make us reserve gigabytes. */
-    if (h->length > DX_MAX_PAYLOAD) return DX_ERR_TOO_LARGE;
+    if (h->length > C2S2C_MAX_PAYLOAD) return C2S2C_ERR_TOO_LARGE;
 
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-int dx_header_encode(const dx_header* h, uint8_t out[DX_HEADER_SIZE])
+int c2s2c_header_encode(const c2s2c_header* h, uint8_t out[C2S2C_HEADER_SIZE])
 {
-    if (!h || !out) return DX_ERR_INVALID_ARG;
+    if (!h || !out) return C2S2C_ERR_INVALID_ARG;
 
     /* Validate before writing so `out` never holds a header we would reject on decode. */
-    int rc = dx_header_check(h);
-    if (rc != DX_OK) return rc;
+    int rc = c2s2c_header_check(h);
+    if (rc != C2S2C_OK) return rc;
 
     /* Field offsets follow the wire table in DOCUMENTATION.md section 2. */
-    dx_wr16(out, h->magic);
+    c2s2c_wr16(out, h->magic);
     out[2] = h->version;
     out[3] = h->flags;
-    dx_wr16(out + 4, h->packet_id);
-    dx_wr32(out + 6, h->length);
-    dx_wr32(out + 10, h->sequence);
-    return DX_OK;
+    c2s2c_wr16(out + 4, h->packet_id);
+    c2s2c_wr32(out + 6, h->length);
+    c2s2c_wr32(out + 10, h->sequence);
+    return C2S2C_OK;
 }
 
-int dx_header_decode(const uint8_t* in, size_t len, dx_header* out)
+int c2s2c_header_decode(const uint8_t* in, size_t len, c2s2c_header* out)
 {
-    if (!in || !out) return DX_ERR_INVALID_ARG;
+    if (!in || !out) return C2S2C_ERR_INVALID_ARG;
 
     /* Bounds check first: every read below touches bytes 0..13 and the input comes from
      * the network, so its length can never be assumed. */
-    if (len < DX_HEADER_SIZE) return DX_ERR_TRUNCATED;
+    if (len < C2S2C_HEADER_SIZE) return C2S2C_ERR_TRUNCATED;
 
-    dx_header h = {dx_rd16(in), in[2], in[3], dx_rd16(in + 4), dx_rd32(in + 6), dx_rd32(in + 10)};
+    c2s2c_header h = {c2s2c_rd16(in),     in[2], in[3], c2s2c_rd16(in + 4), c2s2c_rd32(in + 6),
+                      c2s2c_rd32(in + 10)};
 
     /* Fill the caller's struct only when the header is valid, so a failed decode cannot
      * leave half-trusted data behind that a caller might use by mistake. */
-    int rc = dx_header_check(&h);
-    if (rc == DX_OK) *out = h;
+    int rc = c2s2c_header_check(&h);
+    if (rc == C2S2C_OK) *out = h;
     return rc;
 }

@@ -1,12 +1,12 @@
 //! Cost of the Rust binding: pipelined ping/pong round trips per second.
 //! SPDX-License-Identifier: MIT
-use duplex::registry::*;
-use duplex::{Context, Writer};
+use c2s2c::registry::*;
+use c2s2c::{Context, Writer};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-fn main() -> duplex::Result<()> {
+fn main() -> c2s2c::Result<()> {
     let (server, client) = (Context::new()?, Context::new()?);
     server.listen("127.0.0.1", 0)?;
     let conn = client.connect("127.0.0.1", server.port()?)?;

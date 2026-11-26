@@ -10,12 +10,12 @@ profiles="$PWD/$build/profiles"
 rm -rf "$build"
 
 # Instrumented build of the library and every test (not the other languages' bindings).
-CC="$llvm/clang" cmake -S . -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDX_COVERAGE=ON >/dev/null || exit 1
+CC="$llvm/clang" cmake -S . -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DC2S2C_COVERAGE=ON >/dev/null || exit 1
 cmake --build "$build" >/dev/null || exit 1
 
 # Run the C tests; each process writes its own raw profile.
 mkdir -p "$profiles"
-LLVM_PROFILE_FILE="$profiles/%p.profraw" DX_STRESS_SECONDS=1 \
+LLVM_PROFILE_FILE="$profiles/%p.profraw" C2S2C_STRESS_SECONDS=1 \
     ctest --test-dir "$build" -E "cross_|example_|ffi_|performance|node|python|rust|cpp|wasm|web|generated_|fuzz" >/dev/null
 "$llvm/llvm-profdata" merge -sparse "$profiles"/*.profraw -o "$build/all.profdata"
 

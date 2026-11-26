@@ -1,6 +1,6 @@
 #!/bin/sh
 # Source rules that a compiler cannot enforce (see DOCUMENTATION.md, "Memory"):
-#  - the library allocates only in Source/Core/Ctx/context.c (default allocator and dx_create),
+#  - the library allocates only in Source/Core/Ctx/context.c (default allocator and c2s2c_create),
 #    so nothing can allocate while polling, sending or decoding;
 #  - the library never prints (logging, if ever added, goes through a callback).
 # Exit code 0 = OK. Prints every offending line.

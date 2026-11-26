@@ -7,7 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "dx_internal.h"
+#include "c2s2c_internal.h"
 
 /*
  * What this does: each input is written into one end of a socket pair whose other end is a
@@ -16,28 +16,28 @@
  * as a network peer would, without needing real networking. Sanitizers report any memory error;
  * leaks are reported when the process ends.
  */
-static dx_ctx* ctx;
+static c2s2c_ctx* ctx;
 
 static void drain(uint32_t handle, int* gone)
 {
-    dx_packet pk[32];
+    c2s2c_packet pk[32];
     int n;
-    while ((n = dx_poll(ctx, pk, 32, 0)) > 0) {
+    while ((n = c2s2c_poll(ctx, pk, 32, 0)) > 0) {
         for (int i = 0; i < n; i++)
-            if (pk[i].packet_id == DX_SYS_DISCONNECTED && pk[i].conn == handle) *gone = 1;
-        dx_release(ctx, n);
+            if (pk[i].packet_id == C2S2C_SYS_DISCONNECTED && pk[i].conn == handle) *gone = 1;
+        c2s2c_release(ctx, n);
     }
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
     if (!ctx) {
-        dx_config cfg;
-        dx_config_default(&cfg);
+        c2s2c_config cfg;
+        c2s2c_config_default(&cfg);
         cfg.max_conns = 2;
         cfg.max_payload = 4096;
         cfg.rx_ring_bytes = 1u << 16;
-        ctx = dx_create(&cfg);
+        ctx = c2s2c_create(&cfg);
         if (!ctx) abort();
     }
     int sv[2];
@@ -46,7 +46,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     fcntl(sv[1], F_SETFL, fcntl(sv[1], F_GETFL) | O_NONBLOCK);
 
     uint32_t handle;
-    if (dx_conn_adopt(ctx, sv[0], 1, 0, &handle) != DX_OK) {
+    if (c2s2c_conn_adopt(ctx, sv[0], 1, 0, &handle) != C2S2C_OK) {
         close(sv[0]);
         close(sv[1]);
         return 0;
@@ -61,7 +61,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         }
         drain(handle, &gone);
     }
-    if (!gone) (void)dx_close(ctx, handle), drain(handle, &gone);
+    if (!gone) (void)c2s2c_close(ctx, handle), drain(handle, &gone);
     if (sv[1] >= 0) close(sv[1]);
     return 0;
 }

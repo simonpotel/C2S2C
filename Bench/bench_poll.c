@@ -5,8 +5,8 @@
 #include <string.h>
 #include <time.h>
 
-#include "Duplex/duplex.h"
-#include "dx_packets.h"
+#include "C2S2C/c2s2c.h"
+#include "c2s2c_packets.h"
 
 /*
  * A server context answers every ping with a pong; a client context measures. Both run in this
@@ -27,35 +27,35 @@ static int cmp(const void* a, const void* b)
 }
 
 /* Serves the server side once: answers every ping with the same payload. */
-static void serve(dx_ctx* s)
+static void serve(c2s2c_ctx* s)
 {
-    dx_packet pk[64];
-    int n = dx_poll(s, pk, 64, 0);
+    c2s2c_packet pk[64];
+    int n = c2s2c_poll(s, pk, 64, 0);
     for (int i = 0; i < n; i++)
-        if (pk[i].packet_id == DX_PKT_PING)
-            dx_send(s, pk[i].conn, DX_PKT_PONG, pk[i].data, pk[i].length);
-    dx_release(s, n);
+        if (pk[i].packet_id == C2S2C_PKT_PING)
+            c2s2c_send(s, pk[i].conn, C2S2C_PKT_PONG, pk[i].data, pk[i].length);
+    c2s2c_release(s, n);
 }
 
 /* Receives pongs on the client side; returns how many arrived. */
-static int collect(dx_ctx* c, uint32_t* conn_up)
+static int collect(c2s2c_ctx* c, uint32_t* conn_up)
 {
-    dx_packet pk[64];
-    int n = dx_poll(c, pk, 64, 0), pongs = 0;
+    c2s2c_packet pk[64];
+    int n = c2s2c_poll(c, pk, 64, 0), pongs = 0;
     for (int i = 0; i < n; i++) {
-        if (pk[i].packet_id == DX_PKT_PONG) pongs++;
-        if (pk[i].packet_id == DX_SYS_CONNECTED) (*conn_up)++;
+        if (pk[i].packet_id == C2S2C_PKT_PONG) pongs++;
+        if (pk[i].packet_id == C2S2C_SYS_CONNECTED) (*conn_up)++;
     }
-    dx_release(c, n);
+    c2s2c_release(c, n);
     return pongs;
 }
 
 int main(void)
 {
-    dx_ctx *s = dx_create(NULL), *c = dx_create(NULL);
-    if (!s || !c || dx_listen(s, "127.0.0.1", 0) != DX_OK) return 1;
+    c2s2c_ctx *s = c2s2c_create(NULL), *c = c2s2c_create(NULL);
+    if (!s || !c || c2s2c_listen(s, "127.0.0.1", 0) != C2S2C_OK) return 1;
     uint32_t conn, up = 0;
-    dx_connect(c, "127.0.0.1", (uint16_t)dx_listen_port(s), &conn);
+    c2s2c_connect(c, "127.0.0.1", (uint16_t)c2s2c_listen_port(s), &conn);
     while (!up) {
         serve(s);
         collect(c, &up);
@@ -66,7 +66,7 @@ int main(void)
     static double lat[SAMPLES];
     for (int i = 0; i < SAMPLES + 500; i++) { /* the first 500 are warm-up and not recorded */
         double t0 = now_us();
-        dx_send(c, conn, DX_PKT_PING, ping, 4);
+        c2s2c_send(c, conn, C2S2C_PKT_PING, ping, 4);
         int got = 0;
         while (!got) {
             serve(s);
@@ -82,7 +82,7 @@ int main(void)
     unsigned pongs = 0, inflight = 0;
     double t0 = now_us();
     while (now_us() - t0 < 1e6) {
-        while (inflight < 32 && dx_send(c, conn, DX_PKT_PING, ping, 4) == DX_OK)
+        while (inflight < 32 && c2s2c_send(c, conn, C2S2C_PKT_PING, ping, 4) == C2S2C_OK)
             inflight++;
         serve(s);
         int g = collect(c, &up);
@@ -90,7 +90,7 @@ int main(void)
         inflight -= (unsigned)g;
     }
     printf("pipelined_roundtrips %.0f packets/s\n", (double)pongs / ((now_us() - t0) / 1e6));
-    dx_destroy(c);
-    dx_destroy(s);
+    c2s2c_destroy(c);
+    c2s2c_destroy(s);
     return 0;
 }

@@ -1,5 +1,5 @@
-"""Benchmark service written from scratch in Python (no Duplex): what you write when you recode
-the protocol yourself. It checks everything the Duplex library checks for this packet: header
+"""Benchmark service written from scratch in Python (no C2S2C): what you write when you recode
+the protocol yourself. It checks everything the C2S2C library checks for this packet: header
 fields, direction, length limit, sequence numbers, packet id and payload size, and drops idle
 connections after one second. SPDX-License-Identifier: MIT"""
 import selectors

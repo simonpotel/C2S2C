@@ -1,5 +1,5 @@
-// Benchmark service written from scratch in Node (no Duplex): what you write when you recode the
-// protocol yourself. It checks the same things the Duplex library checks for this packet and drops
+// Benchmark service written from scratch in Node (no C2S2C): what you write when you recode the
+// protocol yourself. It checks the same things the C2S2C library checks for this packet and drops
 // idle connections after one second. SPDX-License-Identifier: MIT
 import net from "node:net";
 

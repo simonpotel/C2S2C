@@ -1,9 +1,9 @@
-// gateway.ts - serves the web chat page and bridges WebSockets to a Duplex TCP server.
+// gateway.ts - serves the web chat page and bridges WebSockets to a C2S2C TCP server.
 // SPDX-License-Identifier: MIT
 //
-// Usage: gateway.ts <duplex server port> [http port]     (the http port is printed first)
+// Usage: gateway.ts <c2s2c server port> [http port]     (the http port is printed first)
 // Browsers cannot speak raw TCP, so this small relay accepts a WebSocket from the
-// page, opens a TCP connection to the chat server, and passes whole Duplex frames both ways (one
+// page, opens a TCP connection to the chat server, and passes whole C2S2C frames both ways (one
 // frame per WebSocket message). It does not look inside the frames: the server validates them.
 // It also serves the page and its TypeScript modules, turning the TypeScript into JavaScript on
 // the fly (a browser cannot run .ts), but only from a short list of folders.
@@ -13,11 +13,11 @@ import http from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import net from "node:net";
 import path from "node:path";
-import type { Duplex } from "node:stream";
+import type { C2S2C } from "node:stream";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const upstreamPort = Number(process.argv[2]);
-const wasmFile = process.env.DUPLEX_WASM ?? path.join(root, "Build/Wasm/duplex_codec.wasm");
+const wasmFile = process.env.C2S2C_WASM ?? path.join(root, "Build/Wasm/c2s2c_codec.wasm");
 const PUBLIC_FOLDERS = ["Examples/Web/Chat/", "Bindings/", "Generated/TypeScript/"];
 const TYPES: Record<string, string> = { ".html": "text/html", ".ts": "text/javascript", ".js": "text/javascript", ".wasm": "application/wasm" };
 
@@ -25,7 +25,7 @@ const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url ?? "/").split("?")[0]);
   let file: string | undefined;
   if (url === "/" || url === "/index.html") file = path.join(root, "Examples/Web/Chat/index.html");
-  else if (url === "/duplex_codec.wasm") file = wasmFile;
+  else if (url === "/c2s2c_codec.wasm") file = wasmFile;
   else if (!url.includes("..") && PUBLIC_FOLDERS.some((f) => url.startsWith("/" + f))) file = path.join(root, url);
   if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
     res.writeHead(404).end("not found");
@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
 // ---- WebSocket (RFC 6455), just what a binary relay needs ----
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-function sendFrame(socket: Duplex, payload: Buffer) {
+function sendFrame(socket: C2S2C, payload: Buffer) {
   const n = payload.length;
   const head = n < 126 ? Buffer.from([0x82, n]) : n < 65536 ? Buffer.from([0x82, 126, n >> 8, n & 255]) : Buffer.concat([Buffer.from([0x82, 127]), Buffer.alloc(8)]);
   if (n >= 65536) head.writeBigUInt64BE(BigInt(n), 2);
@@ -78,7 +78,7 @@ server.on("upgrade", (req, socket) => {
   socket.on("close", closeBoth);
   upstream.on("close", closeBoth);
 
-  // WebSocket messages -> TCP (each binary message is one Duplex frame)
+  // WebSocket messages -> TCP (each binary message is one C2S2C frame)
   let fromBrowser = Buffer.alloc(0);
   socket.on("data", (chunk) => {
     fromBrowser = Buffer.concat([fromBrowser, chunk]);

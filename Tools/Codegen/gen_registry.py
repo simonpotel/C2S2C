@@ -51,30 +51,30 @@ def schema_text(p):
 
 
 def c_field(t):
-    return f"{{DX_T_ARRAY, DX_T_{t[6:-1].upper()}}}" if t.startswith("array<") else f"{{DX_T_{t.upper()}, 0}}"
+    return f"{{C2S2C_T_ARRAY, C2S2C_T_{t[6:-1].upper()}}}" if t.startswith("array<") else f"{{C2S2C_T_{t.upper()}, 0}}"
 
 
 def gen_c_header(ps):
-    ids = "\n".join(f"#define DX_PKT_{p['name'].upper()} 0x{p['id']:04X}u" for p in ps)
+    ids = "\n".join(f"#define C2S2C_PKT_{p['name'].upper()} 0x{p['id']:04X}u" for p in ps)
     return f"""/* {BANNER} */
-#ifndef DX_PACKETS_H
-#define DX_PACKETS_H
+#ifndef C2S2C_PACKETS_H
+#define C2S2C_PACKETS_H
 
-#include "Duplex/dx_types.h"
+#include "C2S2C/c2s2c_types.h"
 
 /* Packet ids (bit 15 set = server to client). */
 {ids}
 
-/** One registry entry; the table dx_registry is sorted by id. */
-typedef struct dx_packet_info {{
+/** One registry entry; the table c2s2c_registry is sorted by id. */
+typedef struct c2s2c_packet_info {{
     uint16_t id;
     const char* name;
     int deprecated; /* 1 = retired id: still valid, do not use in new code */
-    dx_schema schema;
-}} dx_packet_info;
+    c2s2c_schema schema;
+}} c2s2c_packet_info;
 
-extern const dx_packet_info dx_registry[];
-extern const unsigned dx_registry_count;
+extern const c2s2c_packet_info c2s2c_registry[];
+extern const unsigned c2s2c_registry_count;
 
 #endif
 """
@@ -85,18 +85,18 @@ def gen_c_source(ps):
     for p in ps:
         n = p["name"]
         if p["fields"]:
-            arrays.append(f"static const dx_field dx_f_{n}[] = {{{', '.join(c_field(t) for _, t in p['fields'])}}};")
-        fields = f"dx_f_{n}" if p["fields"] else "NULL"
+            arrays.append(f"static const c2s2c_field c2s2c_f_{n}[] = {{{', '.join(c_field(t) for _, t in p['fields'])}}};")
+        fields = f"c2s2c_f_{n}" if p["fields"] else "NULL"
         rows.append(f"    {{0x{p['id']:04X}u, \"{n}\", {int(p['deprecated'])}, {{{len(p['fields'])}, {fields}}}}},")
     return f"""/* {BANNER} */
-#include "dx_packets.h"
+#include "c2s2c_packets.h"
 
 {chr(10).join(arrays)}
 
-const dx_packet_info dx_registry[] = {{
+const c2s2c_packet_info c2s2c_registry[] = {{
 {chr(10).join(rows)}
 }};
-const unsigned dx_registry_count = {len(ps)};
+const unsigned c2s2c_registry_count = {len(ps)};
 """
 
 
@@ -107,14 +107,14 @@ def gen_cpp(ps):
 #pragma once
 #include <cstdint>
 
-namespace duplex::pkt {{
+namespace c2s2c::pkt {{
 {consts}
 
 struct Info {{ uint16_t id; const char* name; const char* schema; }};
 inline constexpr Info all[] = {{
 {rows}
 }};
-}}  // namespace duplex::pkt
+}}  // namespace c2s2c::pkt
 """
 
 
@@ -163,10 +163,10 @@ def gen_golden(ps):
 
 # One folder per target language, plus the neutral listing used by the tests.
 OUTPUTS = {
-    "Generated/C/dx_packets.h": gen_c_header,
-    "Generated/C/dx_registry.c": gen_c_source,
-    "Generated/Cpp/dx_packets.hpp": gen_cpp,
-    "Generated/Python/duplex_registry.py": gen_py,
+    "Generated/C/c2s2c_packets.h": gen_c_header,
+    "Generated/C/c2s2c_registry.c": gen_c_source,
+    "Generated/Cpp/c2s2c_packets.hpp": gen_cpp,
+    "Generated/Python/c2s2c_registry.py": gen_py,
     "Generated/Rust/registry.rs": gen_rust,
     "Generated/TypeScript/registry.ts": gen_ts,
     "Generated/registry.txt": gen_golden,

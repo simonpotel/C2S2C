@@ -1,4 +1,4 @@
-# Duplex
+# C2S2C
 
 A small C library that defines a **binary packet protocol** between a client and a server, so
 programs in different languages (C, C++, Python, Rust, Node, browsers) can talk to each other with
@@ -16,18 +16,18 @@ ctest --preset debug                                      # all tests available 
 A packet server that answers `ping` with `pong` (the full chat exists in Rust, Python and Node: `Examples/<Lang>/Server`):
 
 ```c
-#include <Duplex/duplex.h>
-#include "dx_packets.h"                                   /* DX_PKT_PING, DX_PKT_PONG... (generated) */
+#include <C2S2C/c2s2c.h>
+#include "c2s2c_packets.h"                                   /* C2S2C_PKT_PING, C2S2C_PKT_PONG... (generated) */
 
-dx_ctx* ctx = dx_create(NULL);                            /* all memory reserved here */
-dx_listen(ctx, "127.0.0.1", 0);                           /* port 0 = any; dx_listen_port(ctx) says which */
-dx_packet pk[64];
+c2s2c_ctx* ctx = c2s2c_create(NULL);                            /* all memory reserved here */
+c2s2c_listen(ctx, "127.0.0.1", 0);                           /* port 0 = any; c2s2c_listen_port(ctx) says which */
+c2s2c_packet pk[64];
 for (;;) {
-    int n = dx_poll(ctx, pk, 64, 100);                    /* wait up to 100 ms, up to 64 packets at once */
+    int n = c2s2c_poll(ctx, pk, 64, 100);                    /* wait up to 100 ms, up to 64 packets at once */
     for (int i = 0; i < n; i++)
-        if (pk[i].packet_id == DX_PKT_PING)               /* pk[i].data points into a library ring */
-            dx_send(ctx, pk[i].conn, DX_PKT_PONG, pk[i].data, pk[i].length);
-    dx_release(ctx, n);                                   /* give the memory back */
+        if (pk[i].packet_id == C2S2C_PKT_PING)               /* pk[i].data points into a library ring */
+            c2s2c_send(ctx, pk[i].conn, C2S2C_PKT_PONG, pk[i].data, pk[i].length);
+    c2s2c_release(ctx, n);                                   /* give the memory back */
 }
 ```
 
@@ -50,7 +50,7 @@ listed at the end ([Planned](#planned)).
 
 | offset | size | field | meaning |
 |---|---|---|---|
-| 0 | 2 | `magic` | always `0xC0DE`: "this is a Duplex packet" |
+| 0 | 2 | `magic` | always `0xC0DE`: "this is a C2S2C packet" |
 | 2 | 1 | `version` | protocol version (1) |
 | 3 | 1 | `flags` | bit0 = direction (1 = STOC), bit1 = compressed, bits 2–7 must be 0 |
 | 4 | 2 | `packet_id` | kind of packet; bit 15 = 1 for STOC |
@@ -64,13 +64,13 @@ Network bytes are never trusted, so the **first** broken rule is reported, in th
 
 | Rule | Error |
 |---|---|
-| magic is `0xC0DE` | `DX_ERR_BAD_MAGIC` |
-| version is 1 | `DX_ERR_BAD_VERSION` |
-| reserved flag bits are 0 | `DX_ERR_BAD_FLAGS` |
-| direction flag matches `packet_id` bit 15 | `DX_ERR_BAD_ID` |
-| length ≤ 16 MiB (stops a hostile size) | `DX_ERR_TOO_LARGE` |
+| magic is `0xC0DE` | `C2S2C_ERR_BAD_MAGIC` |
+| version is 1 | `C2S2C_ERR_BAD_VERSION` |
+| reserved flag bits are 0 | `C2S2C_ERR_BAD_FLAGS` |
+| direction flag matches `packet_id` bit 15 | `C2S2C_ERR_BAD_ID` |
+| length ≤ 16 MiB (stops a hostile size) | `C2S2C_ERR_TOO_LARGE` |
 
-Also: `DX_ERR_INVALID_ARG` (NULL pointer), `DX_ERR_TRUNCATED` (fewer than 14 bytes: wait for more).
+Also: `C2S2C_ERR_INVALID_ARG` (NULL pointer), `C2S2C_ERR_TRUNCATED` (fewer than 14 bytes: wait for more).
 
 ## The payload
 
@@ -85,26 +85,26 @@ little-endian. Field types:
 | `bytes` | u32 byte count + data |
 | `array<T>` | u16 element count + elements (`T` is any type except array) |
 
-A **schema** (`dx_schema`) is the ordered list of field types a packet must contain.
-`dx_payload_validate_schema` checks a payload against it: nothing missing, nothing left over.
-Extra errors: `DX_ERR_BAD_UTF8`, `DX_ERR_BAD_VALUE`, `DX_ERR_TRAILING`, `DX_ERR_BAD_SCHEMA`,
-`DX_ERR_OVERFLOW` (writer buffer full).
+A **schema** (`c2s2c_schema`) is the ordered list of field types a packet must contain.
+`c2s2c_payload_validate_schema` checks a payload against it: nothing missing, nothing left over.
+Extra errors: `C2S2C_ERR_BAD_UTF8`, `C2S2C_ERR_BAD_VALUE`, `C2S2C_ERR_TRAILING`, `C2S2C_ERR_BAD_SCHEMA`,
+`C2S2C_ERR_OVERFLOW` (writer buffer full).
 
-Writing and reading use a cursor with a **sticky error**: call `dx_w_*` / `dx_r_*` for each field,
+Writing and reading use a cursor with a **sticky error**: call `c2s2c_w_*` / `c2s2c_r_*` for each field,
 check `err` once at the end.
 
 ```c
 uint8_t buf[64];
-dx_writer w;
-dx_writer_init(&w, buf, sizeof buf);
-dx_w_u32(&w, 42);
-dx_w_string(&w, "hello", 5);
-if (w.err < 0) puts(dx_strerror(w.err));      /* else send buf[0..w.len) */
+c2s2c_writer w;
+c2s2c_writer_init(&w, buf, sizeof buf);
+c2s2c_w_u32(&w, 42);
+c2s2c_w_string(&w, "hello", 5);
+if (w.err < 0) puts(c2s2c_strerror(w.err));      /* else send buf[0..w.len) */
 
-dx_reader r;
-dx_reader_init(&r, buf, w.len);
-uint32_t id = dx_r_u32(&r);
-uint16_t n; const char* s = dx_r_string(&r, &n);   /* points into buf, not NUL-terminated */
+c2s2c_reader r;
+c2s2c_reader_init(&r, buf, w.len);
+uint32_t id = c2s2c_r_u32(&r);
+uint16_t n; const char* s = c2s2c_r_string(&r, &n);   /* points into buf, not NUL-terminated */
 ```
 
 ## The packet registry
@@ -126,58 +126,58 @@ fields = ["user_id:u32", "text:string", "timestamp:u64"]
 Rules, enforced by the generator: ids are unique; bit 15 = 1 means server → client; ids
 `0x7F00-0x7FFF` and `0xFF00-0xFFFF` are reserved for the library; an id is **never reused**
 (`Registry/ids.lock` remembers every id ever used, deleting or renaming one is refused: mark it
-`deprecated = true` instead). In C, `DX_PKT_CHAT_MESSAGE` is the id and
-`dx_payload_validate(id, bytes, len)` checks a payload against its layout.
+`deprecated = true` instead). In C, `C2S2C_PKT_CHAT_MESSAGE` is the id and
+`c2s2c_payload_validate(id, bytes, len)` checks a payload against its layout.
 
 ## Running a server and a client
 
-A **context** (`dx_ctx`) is one network engine. It reserves all its memory when created, then runs
+A **context** (`c2s2c_ctx`) is one network engine. It reserves all its memory when created, then runs
 without allocating. Use one context from one thread; several contexts can run in parallel threads.
 
 ```c
-dx_ctx* ctx = dx_create(NULL);                      /* NULL = default settings */
-dx_listen(ctx, "127.0.0.1", 0);                     /* server: port 0 = any, read it back: */
-int port = dx_listen_port(ctx);
-uint32_t conn; dx_connect(ctx, "127.0.0.1", port, &conn);   /* client (does not block) */
+c2s2c_ctx* ctx = c2s2c_create(NULL);                      /* NULL = default settings */
+c2s2c_listen(ctx, "127.0.0.1", 0);                     /* server: port 0 = any, read it back: */
+int port = c2s2c_listen_port(ctx);
+uint32_t conn; c2s2c_connect(ctx, "127.0.0.1", port, &conn);   /* client (does not block) */
 
-dx_packet pk[64];
+c2s2c_packet pk[64];
 for (;;) {
-    int n = dx_poll(ctx, pk, 64, 100);              /* wait up to 100 ms, get up to 64 at once */
+    int n = c2s2c_poll(ctx, pk, 64, 100);              /* wait up to 100 ms, get up to 64 at once */
     for (int i = 0; i < n; i++) {
-        /* pk[i].packet_id: a registry id, or DX_SYS_CONNECTED / DX_SYS_DISCONNECTED */
+        /* pk[i].packet_id: a registry id, or C2S2C_SYS_CONNECTED / C2S2C_SYS_DISCONNECTED */
         /* pk[i].data, pk[i].length: the payload, zero-copy, inside a library-owned ring */
     }
-    dx_release(ctx, n);                             /* give the memory back (in order) */
+    c2s2c_release(ctx, n);                             /* give the memory back (in order) */
 }
 ```
 
-- **Zero-copy:** `data` points into the library's ring buffer and stays valid until `dx_release`.
+- **Zero-copy:** `data` points into the library's ring buffer and stays valid until `c2s2c_release`.
   If you never release, the ring fills and reading pauses (back-pressure, nothing is lost).
-- **Roles:** the side that called `dx_listen` is the server (sends ids with bit 15 set, receives
-  ids without it); the side that called `dx_connect` is the client. `dx_send` enforces it.
-- **Sending:** `dx_send` / `dx_send_batch` copy into a per-connection buffer; the bytes leave at
-  the next `dx_poll` (one write per connection for a whole batch of replies), when a buffer is
-  half full, or on `dx_flush`. `DX_ERR_WOULD_BLOCK` means the buffer is full: poll, then retry.
+- **Roles:** the side that called `c2s2c_listen` is the server (sends ids with bit 15 set, receives
+  ids without it); the side that called `c2s2c_connect` is the client. `c2s2c_send` enforces it.
+- **Sending:** `c2s2c_send` / `c2s2c_send_batch` copy into a per-connection buffer; the bytes leave at
+  the next `c2s2c_poll` (one write per connection for a whole batch of replies), when a buffer is
+  half full, or on `c2s2c_flush`. `C2S2C_ERR_WOULD_BLOCK` means the buffer is full: poll, then retry.
   Sequence numbers are added by the library.
 - **Bad traffic:** invalid headers, payloads, wrong direction or sequence, oversized lengths, or a
-  peer silent for `idle_timeout_ms` close that connection only; `DX_SYS_DISCONNECTED` carries the
-  reason (`DX_ERR_*`, 0 for a normal close). Unknown/mid-packet hang-ups are reported too.
-- **Settings** (`dx_config`, zero = default): `max_conns` (256), `max_payload` (64 KiB),
+  peer silent for `idle_timeout_ms` close that connection only; `C2S2C_SYS_DISCONNECTED` carries the
+  reason (`C2S2C_ERR_*`, 0 for a normal close). Unknown/mid-packet hang-ups are reported too.
+- **Settings** (`c2s2c_config`, zero = default): `max_conns` (256), `max_payload` (64 KiB),
   `rx_ring_bytes` (4 MiB), `rx_queue`, `tx_bytes`, `idle_timeout_ms` (60 s), `backend`, `flags`,
   `max_tunnels`, optional allocator. Memory is about `max_conns × (max_payload + tx_bytes)` +
-  `rx_ring_bytes`, reserved once at `dx_create`.
+  `rx_ring_bytes`, reserved once at `c2s2c_create`.
 
 ## Library or binding?
 
 The library is the **data path**, written once and shared by every language: framing, strict
-validation, sequence and direction checks, buffers reserved up front, batched `dx_poll`, writes
+validation, sequence and direction checks, buffers reserved up front, batched `c2s2c_poll`, writes
 grouped per connection, and one feature that runs entirely inside it, the relay:
 
 | In the library (C) | What it does |
 |---|---|
-| `dx_poll` / `dx_release` | hand out a whole batch of packets per call (one crossing from another language per batch) |
-| `dx_send`, `dx_send_batch`, `dx_flush` | queue packets; they leave grouped at the next poll |
-| `dx_tunnel(ctx, a, b, drop_ids, n)` | relay two connections both ways without the application (a proxy), dropping the listed packet ids; a slow side pauses the other instead of buffering (`Tests/Integration/test_tunnel.c`) |
+| `c2s2c_poll` / `c2s2c_release` | hand out a whole batch of packets per call (one crossing from another language per batch) |
+| `c2s2c_send`, `c2s2c_send_batch`, `c2s2c_flush` | queue packets; they leave grouped at the next poll |
+| `c2s2c_tunnel(ctx, a, b, drop_ids, n)` | relay two connections both ways without the application (a proxy), dropping the listed packet ids; a slow side pauses the other instead of buffering (`Tests/Integration/test_tunnel.c`) |
 
 **Handlers and hooks live in the bindings** (`on_packet`, `set_hooks` with `on_connect`,
 `on_disconnect`, `on_error`, `before_send`, `after_recv`, and `dispatch`), written in each
@@ -187,14 +187,14 @@ never calls back into the application.
 
 ## I/O backends
 
-| Backend (`dx_config.backend`) | Where | Notes |
+| Backend (`c2s2c_config.backend`) | Where | Notes |
 |---|---|---|
-| `DX_BACKEND_AUTO` (default) | all | epoll on Linux, kqueue on macOS/BSD, poll elsewhere |
-| `DX_BACKEND_POLL` | Unix | portable, scans every socket: fine for hundreds of connections |
-| `DX_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
-| `DX_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
-| (Windows) | Windows | `DX_BACKEND_AUTO` means `WSAPoll` through the poll backend; **there is no IOCP backend yet** |
-| `DX_BACKEND_URING` | Linux ≥ 5.11 | io_uring: readiness requests and answers travel through shared queues (fewer system calls); `dx_create` returns NULL if the kernel or sandbox refuses it |
+| `C2S2C_BACKEND_AUTO` (default) | all | epoll on Linux, kqueue on macOS/BSD, poll elsewhere |
+| `C2S2C_BACKEND_POLL` | Unix | portable, scans every socket: fine for hundreds of connections |
+| `C2S2C_BACKEND_EPOLL` | Linux | cost depends on ready sockets, not on idle ones |
+| `C2S2C_BACKEND_KQUEUE` | macOS/BSD | same idea as epoll |
+| (Windows) | Windows | `C2S2C_BACKEND_AUTO` means `WSAPoll` through the poll backend; **there is no IOCP backend yet** |
+| `C2S2C_BACKEND_URING` | Linux ≥ 5.11 | io_uring: readiness requests and answers travel through shared queues (fewer system calls); `c2s2c_create` returns NULL if the kernel or sandbox refuses it |
 
 ## Using it from other languages
 
@@ -205,32 +205,32 @@ In every binding, handlers and hooks run in the language over batched polls (see
 
 | Language | Where | How |
 |---|---|---|
-| C | `Include/Duplex/duplex.h` + `Generated/C/dx_packets.h` | link `libduplex` |
-| C++17 | `Bindings/Cpp/duplex.hpp` (header only) | `duplex::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `duplex::Error`, handlers/hooks are lambdas, `flush()`; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
-| Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `duplex.Context`, `with ctx.poll() as batch:` (`p.data` is a zero-copy view that raises after release, `p.payload()` a copy), `ctx.send_many([...])` answers a whole batch in one call (a received packet can be echoed without copying), `duplex.encode/decode` from registry layouts; find the library with `DUPLEX_LIBRARY=/path/to/libduplex.*` |
-| Rust | `Bindings/Rust` (crates `duplex-sys` = raw FFI, `duplex` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, duplex::Error>`; handlers/hooks are closures; `flush()`. Build with `DUPLEX_LIB_DIR=<folder of libduplex> cargo build` from `Bindings/Rust` |
-| Node ≥ 22.6 / TypeScript | `Bindings/Node` (N-API addon `Source/binding.c`, API in `Source/index.ts`, types in `index.d.ts`) | `Context`; `poll()` returns a `Batch` (one native call per batch: packet table + one payload buffer) whose packets throw after `batch.release()`; `sendMany([...])` answers a batch in one call; `dispatch()` runs handlers/hooks and releases for you; errors are `DuplexError`; `encode/decode` follow the registry (u64 as `bigint`). Node runs the `.ts` files directly (type stripping). `dx_tunnel` is C-only |
-| Browser (WebAssembly) | `Bindings/Wasm` (`build.sh`, `Source/duplex_wasm.ts`, `Source/duplex_web.ts`) | the codec (headers, payload and UTF-8 validation, registry, CRC-32C) compiled to a ~6 KB `.wasm` with plain clang `--target=wasm32` + `wasm-ld` (no Emscripten): `loadCodec(bytes)` then `WebClient.connect(wsUrl, codec)`; each WebSocket message is exactly one Duplex frame; no sockets, no event loop in the browser build |
+| C | `Include/C2S2C/c2s2c.h` + `Generated/C/c2s2c_packets.h` | link `libc2s2c` |
+| C++17 | `Bindings/Cpp/c2s2c.hpp` (header only) | `c2s2c::Context` owns the engine, `Batch` releases packets when it leaves scope, errors are `c2s2c::Error`, handlers/hooks are lambdas, `flush()`; add `Bindings/Cpp`, `Generated/Cpp` and `Include` to the include path |
+| Python ≥ 3.9 | `Bindings/Python` (`pip install ./Bindings/Python`) | stdlib only (`ctypes`): `c2s2c.Context`, `with ctx.poll() as batch:` (`p.data` is a zero-copy view that raises after release, `p.payload()` a copy), `ctx.send_many([...])` answers a whole batch in one call (a received packet can be echoed without copying), `c2s2c.encode/decode` from registry layouts; find the library with `C2S2C_LIBRARY=/path/to/libc2s2c.*` |
+| Rust | `Bindings/Rust` (crates `c2s2c-sys` = raw FFI, `c2s2c` = safe) | `Context` frees itself on `Drop`; a `Batch` releases its packets on `Drop` and `Packet<'a>` borrows from it, so the compiler rejects any use after release; errors are `Result<_, c2s2c::Error>`; handlers/hooks are closures; `flush()`. Build with `C2S2C_LIB_DIR=<folder of libc2s2c> cargo build` from `Bindings/Rust` |
+| Node ≥ 22.6 / TypeScript | `Bindings/Node` (N-API addon `Source/binding.c`, API in `Source/index.ts`, types in `index.d.ts`) | `Context`; `poll()` returns a `Batch` (one native call per batch: packet table + one payload buffer) whose packets throw after `batch.release()`; `sendMany([...])` answers a batch in one call; `dispatch()` runs handlers/hooks and releases for you; errors are `C2S2CError`; `encode/decode` follow the registry (u64 as `bigint`). Node runs the `.ts` files directly (type stripping). `c2s2c_tunnel` is C-only |
+| Browser (WebAssembly) | `Bindings/Wasm` (`build.sh`, `Source/c2s2c_wasm.ts`, `Source/c2s2c_web.ts`) | the codec (headers, payload and UTF-8 validation, registry, CRC-32C) compiled to a ~6 KB `.wasm` with plain clang `--target=wasm32` + `wasm-ld` (no Emscripten): `loadCodec(bytes)` then `WebClient.connect(wsUrl, codec)`; each WebSocket message is exactly one C2S2C frame; no sockets, no event loop in the browser build |
 
 **Web chat:** `Examples/Web/Gateway/gateway.ts <server port>` serves `Examples/Web/Chat/index.html`
-and relays WebSockets to a Duplex TCP server (a browser cannot open raw TCP); it turns the page's
+and relays WebSockets to a C2S2C TCP server (a browser cannot open raw TCP); it turns the page's
 TypeScript into JavaScript on the fly and serves only `Examples/Web/Chat`, `Bindings` and
 `Generated/TypeScript`. Start any chat server, then the gateway, then open the printed URL:
-`chat_server` prints its port; `gateway.ts <port>` prints the http port; set `DUPLEX_WASM` to the
+`chat_server` prints its port; `gateway.ts <port>` prints the http port; set `C2S2C_WASM` to the
 `.wasm` if it is not under `Build/Wasm`.
 
 ```python
-import duplex, duplex_registry as reg
-ctx = duplex.Context(); ctx.listen("127.0.0.1", 0)
+import c2s2c, c2s2c_registry as reg
+ctx = c2s2c.Context(); ctx.listen("127.0.0.1", 0)
 ctx.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, p.payload()))
 while True: ctx.dispatch(200)
 ```
 
 ## Checksum and performance
 
-`dx_crc32c(crc, data, len)` is a CRC-32C checksum for applications that want to verify data, for
+`c2s2c_crc32c(crc, data, len)` is a CRC-32C checksum for applications that want to verify data, for
 example the chunks of a file sent with `upload`. It starts from 0 and can continue over more data
-(`dx_crc32c(dx_crc32c(0, a, n), b, m)` equals the checksum of `a` then `b`). The CPU's CRC
+(`c2s2c_crc32c(c2s2c_crc32c(0, a, n), b, m)` equals the checksum of `a` then `b`). The CPU's CRC
 instructions are used when present (SSE4.2 on x86-64, ARMv8 CRC on arm64, detected at run time,
 code in `Source/Simd/`); otherwise portable C. The hardware code is tested against the portable
 code for every length and alignment.
@@ -250,7 +250,7 @@ regression check only compares a machine with its own baseline):
 
 Question: is it worth using the library rather than rewriting the protocol in each language?
 `Tools/Scripts/bench_service.sh Build/release` runs the same ping/pong service written three
-ways: on `libduplex` directly (C), **from scratch** in Rust, Python and Node (same checks as the
+ways: on `libc2s2c` directly (C), **from scratch** in Rust, Python and Node (same checks as the
 library for that packet: header fields, direction, length limit, sequence, id, payload size, idle
 timeout), and **on each binding**. One C load generator (3 processes × 64 connections × 4 pings in
 flight) drives every server, then one C checker sends 17 kinds of hostile traffic (bad headers,
@@ -258,7 +258,7 @@ flight) drives every server, then one C checker sends 17 kinds of hostile traffi
 
 | Server | Round trips/s | p99 | Memory | Lines | Hostile traffic |
 |---|---|---|---|---|---|
-| C on libduplex | 1 297 000 | 0.8 ms | 54 MB | 20 | 17/17 |
+| C on libc2s2c | 1 297 000 | 0.8 ms | 54 MB | 20 | 17/17 |
 | Rust from scratch (thread per connection) | 419 000 | 3.7 ms | 2 MB | 48 | 17/17 |
 | Rust on the binding (`poll` / `dispatch`) | 1 341 000 / 1 319 000 | 0.7 ms | 7 MB | 23 | 17/17 |
 | Python from scratch (selectors) | 440 000 | 1.9 ms | 14 MB | 82 | 17/17 |
@@ -295,21 +295,21 @@ All functions are pure (no I/O, no allocation), so thread-safe; the caller owns 
 
 | Function | Role |
 |---|---|
-| `dx_header_encode(h, out)` | validate `h`, write 14 bytes |
-| `dx_header_decode(in, len, out)` | read ≤ `len` bytes, validate; `out` untouched on error |
-| `dx_writer_init`, `dx_w_u8/u16/u32/u64/f32/f64/string/bytes` | append fields to your buffer |
-| `dx_reader_init`, `dx_r_u8/u16/u32/u64/f32/f64/string/bytes` | read fields, bounds-checked; strings/bytes point into the input |
-| `dx_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
-| `dx_payload_validate(id, in, len)` | same, using the registry layout of packet `id`; `DX_ERR_UNKNOWN_ID` if not registered |
-| `dx_packet_name(id)` | registered name (for logs), or NULL |
-| `dx_create` / `dx_destroy` / `dx_config_default` | make and free a context; settings |
-| `dx_listen`, `dx_listen_port`, `dx_connect` | start a server, read its port, start a client |
-| `dx_poll` / `dx_release` | receive a batch of packets (zero-copy) / give their memory back |
-| `dx_send`, `dx_send_batch`, `dx_close` | send (validated, copied), send many, close gracefully |
-| `dx_flush`, `dx_tunnel` | write queued packets now; relay two connections inside the library |
-| `dx_crc32c(crc, data, len)` | CRC-32C checksum, hardware accelerated when possible |
-| `dx_strerror(err)` | static text for an error code, never NULL |
-| `dx_abi_version()` | version of the loaded library |
+| `c2s2c_header_encode(h, out)` | validate `h`, write 14 bytes |
+| `c2s2c_header_decode(in, len, out)` | read ≤ `len` bytes, validate; `out` untouched on error |
+| `c2s2c_writer_init`, `c2s2c_w_u8/u16/u32/u64/f32/f64/string/bytes` | append fields to your buffer |
+| `c2s2c_reader_init`, `c2s2c_r_u8/u16/u32/u64/f32/f64/string/bytes` | read fields, bounds-checked; strings/bytes point into the input |
+| `c2s2c_payload_validate_schema(schema, in, len)` | is `in` exactly one valid payload for the schema? |
+| `c2s2c_payload_validate(id, in, len)` | same, using the registry layout of packet `id`; `C2S2C_ERR_UNKNOWN_ID` if not registered |
+| `c2s2c_packet_name(id)` | registered name (for logs), or NULL |
+| `c2s2c_create` / `c2s2c_destroy` / `c2s2c_config_default` | make and free a context; settings |
+| `c2s2c_listen`, `c2s2c_listen_port`, `c2s2c_connect` | start a server, read its port, start a client |
+| `c2s2c_poll` / `c2s2c_release` | receive a batch of packets (zero-copy) / give their memory back |
+| `c2s2c_send`, `c2s2c_send_batch`, `c2s2c_close` | send (validated, copied), send many, close gracefully |
+| `c2s2c_flush`, `c2s2c_tunnel` | write queued packets now; relay two connections inside the library |
+| `c2s2c_crc32c(crc, data, len)` | CRC-32C checksum, hardware accelerated when possible |
+| `c2s2c_strerror(err)` | static text for an error code, never NULL |
+| `c2s2c_abi_version()` | version of the loaded library |
 
 ## Platforms and CI
 
@@ -330,15 +330,15 @@ io_uring and poll backends), `Tools/Scripts/coverage.sh` measures coverage (see 
 - **Little-endian**: native on x86/ARM, no byte swapping; `Source/Codec/endian.h` still builds
   numbers byte by byte, so it is safe on any CPU and on unaligned data.
 - **Reserved bits must be 0**: lets a future version give them a meaning safely.
-- **Prefix `dx_`/`DX_`, hidden symbols**: only declared functions are public, which keeps the
-  stable binary interface (ABI) small. Versions: `DX_ABI_VERSION` (C interface) and
-  `DX_PROTOCOL_VERSION` (bytes on the wire) are independent.
+- **Prefix `c2s2c_`/`C2S2C_`, hidden symbols**: only declared functions are public, which keeps the
+  stable binary interface (ABI) small. Versions: `C2S2C_ABI_VERSION` (C interface) and
+  `C2S2C_PROTOCOL_VERSION` (bytes on the wire) are independent.
 
 ## Layout
 
 | Folder | What is in it |
 |---|---|
-| `Include/Duplex/` | the public headers (the contract) |
+| `Include/C2S2C/` | the public headers (the contract) |
 | `Source/Core/` | header logic, registry lookup; `Ctx/` context, event loop, delivery queue, listener, relay; `Conn/` one connection (lifecycle, sending, receiving, events, maintenance) |
 | `Source/Codec/` | byte order, payload writer/reader, UTF-8 |
 | `Source/Memory/` | ring buffer and slot pool (no allocation: the caller gives the memory) |
@@ -360,7 +360,7 @@ are short shell scripts.
 |---|---|
 | Naming | folders PascalCase, files snake_case, no case-only clashes (macOS/Windows are case-insensitive) |
 | Unit | exact bytes, round trips, limits (0/max/max+1), every error, NULL args, struct layout, UTF-8 edge cases |
-| Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `DX_SEED=<n>` |
+| Property | 100 000 random round trips per type (write, validate, read back); garbage never crashes. Seed is printed; replay with `C2S2C_SEED=<n>` |
 | Vectors | reference `.bin`/`.json` pairs (headers and payloads) give the expected result (`Tests/Vectors/test_vectors.c`); reusable by every future binding |
 | Generated | one test per language (`Tests/Generated/<Lang>/`) checks that its generated code lists the same packets, names and layouts as `Generated/registry.txt`; C always runs, C++/Python/Rust/TypeScript run if `c++`, Python 3.11+, `rustc`, `node` (22.6+) are installed |
 | Registry | `Generated/` is up to date with `protocol.toml` (needs Python 3.11+, else not registered) |
@@ -368,7 +368,7 @@ are short shell scripts.
 | Faults | a raw socket sends hostile traffic: 1 byte at a time, bad magic/version/flags/direction/sequence/id, huge lengths, bad UTF-8, hang-up mid-packet, slowloris, flood with back-pressure |
 | Memory | after warm-up the allocator hook counts **zero** calls during traffic and connection churn, and nothing leaks; `check_source_rules.sh` forbids allocation and printing outside `context.c` |
 | Concurrency | several contexts in parallel threads (meant for ThreadSanitizer) |
-| Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `DX_STRESS_SECONDS=600 ctest -L Stress` for the long run |
+| Stress | thousands of connections (up to the OS limit), sustained traffic, memory drift check; `C2S2C_STRESS_SECONDS=600 ctest -L Stress` for the long run |
 | Bindings | per binding: idiomatic API, errors, release semantics (no packet used after release), handlers and hooks (written in the language) |
 | Wasm | the WebAssembly codec passes the same reference vectors as C; the web chat runs end to end (gateway, WebSocket client code, C server) and the page and every module it imports are fetched like a browser would |
 | Examples | the chat server and client in Rust, Python and Node run as separate processes |
@@ -390,11 +390,11 @@ cmake --preset fuzz && cmake --build --preset fuzz && ctest --preset fuzz   # fu
 Apple's own clang hangs with ASan on recent macOS, and ThreadSanitizer (`tsan`) crashes there,
 so run `Tools/Scripts/linux_check.sh` (Docker, Ubuntu) to run debug, asan and tsan on Linux, which
 also exercises the epoll backend, and replays the runtime tests on poll and io_uring. Any runtime
-test can be pointed at a backend with `DX_TEST_BACKEND=<n>` (1 poll, 2 epoll, 3 kqueue, 4 io_uring). Coverage of `Source/`: 100 % lines, about 98 % branches.
+test can be pointed at a backend with `C2S2C_TEST_BACKEND=<n>` (1 poll, 2 epoll, 3 kqueue, 4 io_uring). Coverage of `Source/`: 100 % lines, about 98 % branches.
 
 Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vectors/`
-(payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
-Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
+(payload json: `{"schema": "u8,string,array<u16>", "error": "C2S2C_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
+Add a unit test: `Tests/Unit/test_x.c` + `c2s2c_unit_test(test_x)` in `Tests/CMakeLists.txt`.
 
 ## Sources
 
@@ -406,7 +406,7 @@ checked when this section was written (November 2026).
 | Source | What it says | Used for |
 |---|---|---|
 | [Message Framing](https://blog.stephencleary.com/2009/04/message-framing.html), Stephen Cleary | TCP keeps no message boundaries; the application must add them. Compares length prefixes with delimiters and prefers length prefixes. | the 14-byte header with a `length` field |
-| [Beej's Guide, Handling partial send()s](https://beej.us/guide/bgnet/html/#sendall), Brian Hall | `send` may write only part of a buffer; loop until everything is sent. | the per-connection send buffer and `dx_conn_flush` |
+| [Beej's Guide, Handling partial send()s](https://beej.us/guide/bgnet/html/#sendall), Brian Hall | `send` may write only part of a buffer; loop until everything is sent. | the per-connection send buffer and `c2s2c_conn_flush` |
 | [Beej's Guide, Serialization](https://beej.us/guide/bgnet/html/#serialization) | Pack numbers into a portable binary form and wrap them in a header with type and length. | the payload format and `packet_id` |
 | [Stack Overflow 41948032](https://stackoverflow.com/questions/41948032/how-does-a-tcp-packet-arrive-when-using-the-socket-api-in-c), accepted answer | A read may return part of a message, part of its prefix, or several messages: buffer until a frame is complete. In the answer's words: "TCP is a stream protocol - it transmits a stream of bytes." | `Conn/receiving.c`, the Faults tests (one byte at a time, split frames) |
 | [Stack Overflow 1386142](https://stackoverflow.com/questions/1386142/handling-partial-return-from-recv-tcp-in-c) and [10250666](https://stackoverflow.com/questions/10250666/socket-programming-issue-with-recv-receiving-partial-messages) | Real cases of "truncated" messages solved by a read loop and length framing. | the problem statement in the README |
@@ -431,13 +431,13 @@ checked when this section was written (November 2026).
 | [io_uring(7)](https://man7.org/linux/man-pages/man7/io_uring.7.html) and [Efficient IO with io_uring](https://kernel.dk/io_uring.pdf), Jens Axboe | Requests and completions go through two queues shared with the kernel, so many operations cost few system calls. | `Source/IO/io_uring.c` |
 | [RFC 896](https://www.rfc-editor.org/rfc/rfc896), John Nagle | The small-packet problem and the algorithm that delays small segments. | why sockets set `TCP_NODELAY` |
 | [Nagle and Delayed ACK](https://www.stuartcheshire.org/papers/NagleDelayedAck/), Stuart Cheshire; [It's always TCP_NODELAY](https://brooker.co.za/blog/2024/05/09/nagle.html), Marc Brooker ([HN discussion](https://news.ycombinator.com/item?id=40310896)) | Nagle plus delayed acknowledgements stalls request/response traffic; latency-sensitive programs should disable Nagle. | `TCP_NODELAY`, and grouping our own writes per connection instead |
-| [tcp(7)](https://man7.org/linux/man-pages/man7/tcp.7.html) | `TCP_NODELAY` turns Nagle off; `TCP_CORK` gathers partial writes. | the "dirty list" that writes once per connection per batch (`dx_flush`) |
+| [tcp(7)](https://man7.org/linux/man-pages/man7/tcp.7.html) | `TCP_NODELAY` turns Nagle off; `TCP_CORK` gathers partial writes. | the "dirty list" that writes once per connection per batch (`c2s2c_flush`) |
 
 ### Memory, flow control, attacks
 
 | Source | What it says | Used for |
 |---|---|---|
-| [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/disruptor.html), Thompson, Farley et al. | A pre-sized ring buffer with reused slots avoids allocation on the hot path and cuts latency. | `Source/Memory/ring.c`, all memory reserved at `dx_create` |
+| [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/disruptor.html), Thompson, Farley et al. | A pre-sized ring buffer with reused slots avoids allocation on the hot path and cuts latency. | `Source/Memory/ring.c`, all memory reserved at `c2s2c_create` |
 | [Backpressuring in Streams](https://nodejs.org/en/learn/modules/backpressuring-in-streams), Node.js | A fast producer overwhelms a slow consumer unless buffers are bounded and the producer is paused. | reading pauses when the application or a relay peer is behind |
 | [Slowloris](https://en.wikipedia.org/wiki/Slowloris_%28cyber_attack%29), Wikipedia | One client keeps many connections open by sending very slowly; mitigations are time limits and minimum rates. | `idle_timeout_ms`, the slowloris tests |
 
@@ -445,7 +445,7 @@ checked when this section was written (November 2026).
 
 | Source | What it says | Used for |
 |---|---|---|
-| [RFC 7143](https://www.rfc-editor.org/rfc/rfc7143) (iSCSI) | Requires the CRC-32C (Castagnoli) digest, polynomial 0x1EDC6F41, for integrity. | the choice of CRC-32C for `dx_crc32c` |
+| [RFC 7143](https://www.rfc-editor.org/rfc/rfc7143) (iSCSI) | Requires the CRC-32C (Castagnoli) digest, polynomial 0x1EDC6F41, for integrity. | the choice of CRC-32C for `c2s2c_crc32c` |
 | [x86 CRC32 instruction](https://www.felixcloutier.com/x86/crc32) (copy of Intel's manual), [Arm C Language Extensions](https://arm-software.github.io/acle/main/acle.html) | The SSE4.2 and Armv8 instructions that compute CRC-32C in hardware. | `Source/Simd/crc32_sse42.c`, `crc32_armv8.c` |
 
 ### Testing
@@ -461,20 +461,20 @@ checked when this section was written (November 2026).
 |---|---|---|
 | [ctypes](https://docs.python.org/3/library/ctypes.html) | Load a shared library and describe its functions and structs from plain Python. | `Bindings/Python` (no compiled extension) |
 | [Node-API](https://nodejs.org/api/n-api.html) | A stable C interface for native Node add-ons, including buffer exchange. | `Bindings/Node/Source/binding.c` |
-| [The Rustonomicon, FFI](https://doc.rust-lang.org/nomicon/ffi.html) | Call C through `extern` blocks and wrap the unsafe calls in safe types. | `Bindings/Rust` (`duplex-sys` raw, `duplex` safe) |
+| [The Rustonomicon, FFI](https://doc.rust-lang.org/nomicon/ffi.html) | Call C through `extern` blocks and wrap the unsafe calls in safe types. | `Bindings/Rust` (`c2s2c-sys` raw, `c2s2c` safe) |
 
 ### Existing libraries in the same space
 
-| Library | What it is | Difference with Duplex |
+| Library | What it is | Difference with C2S2C |
 |---|---|---|
-| [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets), Valve | Message transport over UDP with reliability, fragmentation and encryption. | UDP and encryption; Duplex is TCP with a typed packet registry shared by several languages. |
-| [ENet](http://enet.bespin.org/), Lee Salzman | A small C library for reliable, ordered delivery over UDP, common in games. | no schema or payload validation; Duplex validates every field against the registry. |
+| [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets), Valve | Message transport over UDP with reliability, fragmentation and encryption. | UDP and encryption; C2S2C is TCP with a typed packet registry shared by several languages. |
+| [ENet](http://enet.bespin.org/), Lee Salzman | A small C library for reliable, ordered delivery over UDP, common in games. | no schema or payload validation; C2S2C validates every field against the registry. |
 
 ## Planned
 
 - An **IOCP backend** for Windows (today Windows uses `WSAPoll`), and porting the bindings and
   the shell-based checks to Windows.
-- Long runs: fuzzing for hours and the 10-minute stress run (`DX_STRESS_SECONDS=600`) were not
+- Long runs: fuzzing for hours and the 10-minute stress run (`C2S2C_STRESS_SECONDS=600`) were not
   executed for this version; the short versions run in CI.
 
 License: MIT.

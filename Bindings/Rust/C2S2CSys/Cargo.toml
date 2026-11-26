@@ -1,11 +1,11 @@
 [package]
-name = "duplex-sys"
+name = "c2s2c-sys"
 version = "0.1.0"
 edition = "2021"
-description = "Raw FFI declarations of the Duplex C API"
+description = "Raw FFI declarations of the C2S2C C API"
 license = "MIT"
 build = "build.rs"
-links = "duplex"
+links = "c2s2c"
 
 [lib]
 path = "Source/lib.rs"

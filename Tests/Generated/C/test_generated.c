@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "../../check.h"
-#include "dx_packets.h"
+#include "c2s2c_packets.h"
 
 /*
  * Why: Generated/registry.txt is the language-neutral listing ("0x8002 chat_message
@@ -16,13 +16,13 @@ static const char* const type_names[] = {"",    "u8",  "u16", "u32", "u64",  "i8
                                          "i32", "i64", "f32", "f64", "bool", "string", "bytes"};
 
 /* Writes the schema as text, e.g. "u32,string,array<u16>". */
-static void schema_text(const dx_schema* s, char* out, size_t cap)
+static void schema_text(const c2s2c_schema* s, char* out, size_t cap)
 {
     out[0] = 0;
     for (uint16_t i = 0; i < s->count; i++) {
-        const dx_field* f = &s->fields[i];
+        const c2s2c_field* f = &s->fields[i];
         if (i) strncat(out, ",", cap - strlen(out) - 1);
-        if (f->type == DX_T_ARRAY) {
+        if (f->type == C2S2C_T_ARRAY) {
             strncat(out, "array<", cap - strlen(out) - 1);
             strncat(out, type_names[f->elem], cap - strlen(out) - 1);
             strncat(out, ">", cap - strlen(out) - 1);
@@ -46,9 +46,9 @@ int main(int argc, char** argv)
         CHECK(fields >= 2);
 
         /* Find the entry with that id and compare name and schema text. */
-        const dx_packet_info* p = NULL;
-        for (unsigned i = 0; i < dx_registry_count; i++)
-            if (dx_registry[i].id == id) p = &dx_registry[i];
+        const c2s2c_packet_info* p = NULL;
+        for (unsigned i = 0; i < c2s2c_registry_count; i++)
+            if (c2s2c_registry[i].id == id) p = &c2s2c_registry[i];
         CHECK(p != NULL);
         if (!p) continue;
         schema_text(&p->schema, got, sizeof got);
@@ -56,6 +56,6 @@ int main(int argc, char** argv)
         lines++;
     }
     fclose(f);
-    CHECK(lines == dx_registry_count); /* nothing missing, nothing extra */
-    return dx_test_done();
+    CHECK(lines == c2s2c_registry_count); /* nothing missing, nothing extra */
+    return c2s2c_test_done();
 }

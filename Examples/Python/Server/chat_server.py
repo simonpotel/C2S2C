@@ -7,8 +7,8 @@ import signal
 import sys
 import time
 
-import duplex
-import duplex_registry as reg
+import c2s2c
+import c2s2c_registry as reg
 
 users = {}  # connection handle -> nickname
 stop = False
@@ -17,21 +17,21 @@ stop = False
 def on_login(ctx, p):
     (nickname,) = p.values()
     users[p.conn] = nickname
-    ctx.send(p.conn, reg.LOGIN_OK, duplex.encode(reg.LOGIN_OK, p.conn))  # the handle is the user id
+    ctx.send(p.conn, reg.LOGIN_OK, c2s2c.encode(reg.LOGIN_OK, p.conn))  # the handle is the user id
 
 
 def on_chat(ctx, p):
     if p.conn not in users:
         return  # must log in first
     (text,) = p.values()
-    message = duplex.encode(reg.CHAT_MESSAGE, p.conn, text, int(time.time()))
+    message = c2s2c.encode(reg.CHAT_MESSAGE, p.conn, text, int(time.time()))
     for conn in list(users):  # broadcast to everybody who is logged in
         ctx.send(conn, reg.CHAT_MESSAGE, message)
 
 
 def main():
     global stop
-    ctx = duplex.Context()
+    ctx = c2s2c.Context()
     ctx.listen("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 0)
     ctx.on_packet(reg.LOGIN, on_login)
     ctx.on_packet(reg.CHAT_SEND, on_chat)

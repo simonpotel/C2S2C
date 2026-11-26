@@ -4,19 +4,19 @@
 
 #include <stddef.h>
 
-void dx_ring_init(dx_ring* r, uint8_t* buf, uint32_t cap)
+void c2s2c_ring_init(c2s2c_ring* r, uint8_t* buf, uint32_t cap)
 {
     r->buf = buf;
     r->cap = cap;
     r->head = r->tail = r->used = 0;
 }
 
-uint32_t dx_ring_free(const dx_ring* r)
+uint32_t c2s2c_ring_free(const c2s2c_ring* r)
 {
     return r->cap - r->used;
 }
 
-uint8_t* dx_ring_push(dx_ring* r, uint32_t n, uint32_t* adv)
+uint8_t* c2s2c_ring_push(c2s2c_ring* r, uint32_t n, uint32_t* adv)
 {
     if (n > r->cap - r->used) return NULL;
     if (r->used == 0) r->head = r->tail = 0; /* empty: restart at 0 for the longest free run */
@@ -47,7 +47,7 @@ uint8_t* dx_ring_push(dx_ring* r, uint32_t n, uint32_t* adv)
     return r->buf + at;
 }
 
-void dx_ring_pop(dx_ring* r, uint32_t adv)
+void c2s2c_ring_pop(c2s2c_ring* r, uint32_t adv)
 {
     r->head = (r->head + adv) % r->cap;
     r->used -= adv;

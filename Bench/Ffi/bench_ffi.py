@@ -2,10 +2,10 @@
 this one process, 32 pings in flight, one second). SPDX-License-Identifier: MIT"""
 import time
 
-import duplex
-import duplex_registry as reg
+import c2s2c
+import c2s2c_registry as reg
 
-server, client = duplex.Context(), duplex.Context()
+server, client = c2s2c.Context(), c2s2c.Context()
 server.listen("127.0.0.1", 0)
 conn = client.connect("127.0.0.1", server.port)
 server.on_packet(reg.PING, lambda c, p: c.send(p.conn, reg.PONG, bytes(p.data)))
@@ -18,7 +18,7 @@ def on_pong(ctx, p):
 
 
 client.on_packet(reg.PONG, on_pong)
-payload = duplex.encode(reg.PING, 1)
+payload = c2s2c.encode(reg.PING, 1)
 inflight = total = 0
 t0 = time.monotonic()
 while time.monotonic() - t0 < 1.0:

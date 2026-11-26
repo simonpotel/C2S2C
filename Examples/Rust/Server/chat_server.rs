@@ -3,14 +3,14 @@
 //!
 //! Same protocol and command line as the C version. Usage: chat_server_rust [port]
 //! The chosen port is printed on the first line.
-use duplex::registry::*;
-use duplex::{Context, Hooks, Writer};
+use c2s2c::registry::*;
+use c2s2c::{Context, Hooks, Writer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn main() -> duplex::Result<()> {
+fn main() -> c2s2c::Result<()> {
     let ctx = Context::new()?;
     let port = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(0);
     ctx.listen("127.0.0.1", port)?;

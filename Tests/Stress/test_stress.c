@@ -11,31 +11,31 @@
  * connection sends pings in turn and the server answers each with a pong. We check that all
  * connections come up, every ping gets exactly one pong, the process memory does not keep
  * growing, and report the throughput.
- * Duration: DX_STRESS_SECONDS (default 3). Connections: DX_STRESS_CONNS (default 10000, reduced
- * automatically to what the file-descriptor limit allows: two sockets per connection).
+ * Duration: C2S2C_STRESS_SECONDS (default 3). Connections: C2S2C_STRESS_CONNS (default 10000,
+ * reduced automatically to what the file-descriptor limit allows: two sockets per connection).
  */
 typedef struct {
-    dx_ctx* ctx;
+    c2s2c_ctx* ctx;
     unsigned connected, disconnected;
     uint64_t pings, pongs;
     int reply, bad;
 } peer;
 
-static void on_pkt(void* user, const dx_packet* p)
+static void on_pkt(void* user, const c2s2c_packet* p)
 {
     peer* s = user;
     switch (p->packet_id) {
-    case DX_SYS_CONNECTED:
+    case C2S2C_SYS_CONNECTED:
         s->connected++;
         break;
-    case DX_SYS_DISCONNECTED:
+    case C2S2C_SYS_DISCONNECTED:
         s->disconnected++;
         break;
-    case DX_PKT_PING:
+    case C2S2C_PKT_PING:
         s->pings++;
-        if (s->reply) s->bad += dx_send(s->ctx, p->conn, DX_PKT_PONG, p->data, p->length) < 0;
+        if (s->reply) s->bad += c2s2c_send(s->ctx, p->conn, C2S2C_PKT_PONG, p->data, p->length) < 0;
         break;
-    case DX_PKT_PONG:
+    case C2S2C_PKT_PONG:
         s->pongs++;
         break;
     default:
@@ -45,17 +45,17 @@ static void on_pkt(void* user, const dx_packet* p)
 
 static void pump(peer* s)
 {
-    dx_packet pk[256];
-    int n = dx_poll(s->ctx, pk, 256, 0);
+    c2s2c_packet pk[256];
+    int n = c2s2c_poll(s->ctx, pk, 256, 0);
     for (int i = 0; i < n; i++)
         on_pkt(s, &pk[i]);
-    if (n > 0) dx_release(s->ctx, n);
+    if (n > 0) c2s2c_release(s->ctx, n);
 }
 
-static dx_ctx* make(unsigned conns)
+static c2s2c_ctx* make(unsigned conns)
 {
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_conns = conns + 1;
     cfg.max_payload = 256;
     cfg.rx_ring_bytes = 256u << 10; /* small, so a short warm-up wraps it and touches all of it */
@@ -63,7 +63,7 @@ static dx_ctx* make(unsigned conns)
     cfg.tx_bytes = 4096;
     cfg.idle_timeout_ms = 3600000;
     cfg.backend = test_backend();
-    return dx_create(&cfg);
+    return c2s2c_create(&cfg);
 }
 
 static long rss_kb(void)
@@ -85,11 +85,11 @@ static unsigned env_or(const char* name, unsigned dflt)
 
 int main(void)
 {
-    long fds = dx_net_raise_fd_limit();
-    unsigned conns = env_or("DX_STRESS_CONNS", 10000);
+    long fds = c2s2c_net_raise_fd_limit();
+    unsigned conns = env_or("C2S2C_STRESS_CONNS", 10000);
     unsigned max_by_fds = fds > 200 ? (unsigned)((fds - 100) / 2) : 50;
     if (conns > max_by_fds) conns = max_by_fds;
-    unsigned seconds = env_or("DX_STRESS_SECONDS", 3);
+    unsigned seconds = env_or("C2S2C_STRESS_SECONDS", 3);
     printf("connections: %u (fd limit %ld), duration: %u s\n", conns, fds, seconds);
 
     peer S = {0}, C = {0};
@@ -97,13 +97,14 @@ int main(void)
     C.ctx = make(conns);
     S.reply = 1;
     CHECK(S.ctx && C.ctx);
-    dx_listen(S.ctx, "127.0.0.1", 0);
+    c2s2c_listen(S.ctx, "127.0.0.1", 0);
     uint32_t* handle = malloc(sizeof(uint32_t) * conns);
     /* Connect in bursts and serve the listener in between: the operating system keeps only a
      * short queue of not-yet-accepted connections (128 on macOS) and refuses the overflow. */
     unsigned opened = 0;
     for (unsigned i = 0; i < conns; i++) {
-        if (dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &handle[i]) != DX_OK) {
+        if (c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &handle[i]) !=
+            C2S2C_OK) {
             /* The system refused (ports or descriptors exhausted): that is its maximum. */
             printf("operating system limit reached after %u connections\n", i);
             break;
@@ -131,7 +132,7 @@ int main(void)
     uint8_t b[4] = {1, 2, 3, 4};
     uint64_t sent = 0;
     for (unsigned i = 0; i < conns; i++) {
-        while (dx_send(C.ctx, handle[i], DX_PKT_PING, b, 4) == DX_ERR_WOULD_BLOCK) {
+        while (c2s2c_send(C.ctx, handle[i], C2S2C_PKT_PING, b, 4) == C2S2C_ERR_WOULD_BLOCK) {
             pump(&S);
             pump(&C);
         }
@@ -149,7 +150,7 @@ int main(void)
     w1 = test_now_ms();
     while (C.pongs < warm_target && test_now_ms() - w1 < 120000) {
         for (int k = 0; k < 256 && sent < warm_target; k++) {
-            if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;
+            if (c2s2c_send(C.ctx, handle[next], C2S2C_PKT_PING, b, 4) == C2S2C_OK) sent++;
             next = (next + 1) % conns;
         }
         pump(&S);
@@ -161,7 +162,7 @@ int main(void)
     uint64_t start = test_now_ms();
     while (test_now_ms() - start < seconds * 1000u) {
         for (int k = 0; k < 256; k++) {
-            if (dx_send(C.ctx, handle[next], DX_PKT_PING, b, 4) == DX_OK) sent++;
+            if (c2s2c_send(C.ctx, handle[next], C2S2C_PKT_PING, b, 4) == C2S2C_OK) sent++;
             next = (next + 1) % conns;
         }
         pump(&S);
@@ -186,8 +187,8 @@ int main(void)
     /* The side that closes first keeps the sockets in TIME_WAIT for a while. Closing the server
      * side first leaves the clients' ephemeral ports free, so tests run right after this one
      * can still connect. */
-    dx_destroy(S.ctx);
-    dx_destroy(C.ctx);
+    c2s2c_destroy(S.ctx);
+    c2s2c_destroy(C.ctx);
     free(handle);
-    return dx_test_done();
+    return c2s2c_test_done();
 }

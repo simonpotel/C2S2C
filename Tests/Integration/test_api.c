@@ -30,204 +30,210 @@ static void flaky_free(void* p, void* user)
 
 static void test_create_failures(void)
 {
-    dx_config cfg;
-    dx_config_default(&cfg);
-    dx_ctx* ok = dx_create(&cfg); /* the defaults are valid */
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
+    c2s2c_ctx* ok = c2s2c_create(&cfg); /* the defaults are valid */
     CHECK(ok != NULL);
-    dx_destroy(ok);
+    c2s2c_destroy(ok);
 
-    dx_config c;
-    dx_config_default(&c);
+    c2s2c_config c;
+    c2s2c_config_default(&c);
     c.max_conns = 65536;
-    CHECK(dx_create(&c) == NULL);
-    dx_config_default(&c);
-    c.max_payload = DX_MAX_PAYLOAD + 1;
-    CHECK(dx_create(&c) == NULL);
-    dx_config_default(&c);
+    CHECK(c2s2c_create(&c) == NULL);
+    c2s2c_config_default(&c);
+    c.max_payload = C2S2C_MAX_PAYLOAD + 1;
+    CHECK(c2s2c_create(&c) == NULL);
+    c2s2c_config_default(&c);
     c.rx_ring_bytes = 1000;
-    CHECK(dx_create(&c) == NULL);
-    dx_config_default(&c);
+    CHECK(c2s2c_create(&c) == NULL);
+    c2s2c_config_default(&c);
     c.tx_bytes = 100;
-    CHECK(dx_create(&c) == NULL);
-    dx_config_default(&c);
+    CHECK(c2s2c_create(&c) == NULL);
+    c2s2c_config_default(&c);
     c.backend = 99;
-    CHECK(dx_create(&c) == NULL);
-    dx_config_default(&c);
+    CHECK(c2s2c_create(&c) == NULL);
+    c2s2c_config_default(&c);
     c.size = 8;
-    CHECK(dx_create(&c) == NULL);
+    CHECK(c2s2c_create(&c) == NULL);
 
-    /* Refuse each allocation in turn: dx_create fails and frees what it had taken. */
+    /* Refuse each allocation in turn: c2s2c_create fails and frees what it had taken. */
     int failures = 0;
     for (int n = 1; n <= 12; n++) {
         flaky f = {n, 0, 0};
-        dx_config_default(&c);
+        c2s2c_config_default(&c);
         c.max_conns = 4;
-        c.alloc = (dx_alloc){flaky_alloc, flaky_free, &f};
-        dx_ctx* ctx = dx_create(&c);
+        c.alloc = (c2s2c_alloc){flaky_alloc, flaky_free, &f};
+        c2s2c_ctx* ctx = c2s2c_create(&c);
         if (!ctx) {
             failures++;
             CHECK(f.live == 0); /* nothing leaked on the failure path */
         } else {
-            dx_destroy(ctx);
+            c2s2c_destroy(ctx);
             CHECK(f.live == 0);
         }
     }
     CHECK(failures >= 6); /* the context needs about eight blocks: most refusals must fail it */
-    dx_destroy(NULL);     /* harmless */
+    c2s2c_destroy(NULL);  /* harmless */
 }
 
 static void test_listen_and_connect_errors(void)
 {
-    dx_ctx* ctx = dx_create(NULL);
+    c2s2c_ctx* ctx = c2s2c_create(NULL);
     uint32_t conn;
-    CHECK(dx_listen_port(ctx) == DX_ERR_INVALID_ARG); /* not listening yet */
-    CHECK(dx_listen(ctx, "not an address", 0) == DX_ERR_INVALID_ARG);
-    CHECK(dx_listen(NULL, "127.0.0.1", 0) == DX_ERR_INVALID_ARG);
-    CHECK(dx_connect(ctx, "not an address", 1, &conn) == DX_ERR_INVALID_ARG);
-    CHECK(dx_connect(ctx, "127.0.0.1", 1, NULL) == DX_ERR_INVALID_ARG);
-    CHECK(dx_listen(ctx, "127.0.0.1", 0) == DX_OK);
-    CHECK(dx_listen(ctx, "127.0.0.1", 0) == DX_ERR_LIMIT); /* one listener per context */
-    CHECK(dx_listen_port(ctx) > 0);
+    CHECK(c2s2c_listen_port(ctx) == C2S2C_ERR_INVALID_ARG); /* not listening yet */
+    CHECK(c2s2c_listen(ctx, "not an address", 0) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_listen(NULL, "127.0.0.1", 0) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_connect(ctx, "not an address", 1, &conn) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_connect(ctx, "127.0.0.1", 1, NULL) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_listen(ctx, "127.0.0.1", 0) == C2S2C_OK);
+    CHECK(c2s2c_listen(ctx, "127.0.0.1", 0) == C2S2C_ERR_LIMIT); /* one listener per context */
+    CHECK(c2s2c_listen_port(ctx) > 0);
 
     /* IPv6 loopback, where the machine has it. */
-    dx_ctx* v6 = dx_create(NULL);
-    if (dx_listen(v6, "::1", 0) == DX_OK) {
+    c2s2c_ctx* v6 = c2s2c_create(NULL);
+    if (c2s2c_listen(v6, "::1", 0) == C2S2C_OK) {
         uint32_t c6;
-        CHECK(dx_connect(ctx, "::1", (uint16_t)dx_listen_port(v6), &c6) == DX_OK);
+        CHECK(c2s2c_connect(ctx, "::1", (uint16_t)c2s2c_listen_port(v6), &c6) == C2S2C_OK);
     }
-    dx_destroy(v6);
+    c2s2c_destroy(v6);
 
     /* No free connection slot left. */
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_conns = 1;
-    dx_ctx* one = dx_create(&cfg);
-    CHECK(dx_connect(one, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &conn) == DX_OK);
-    CHECK(dx_connect(one, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &conn) == DX_ERR_LIMIT);
-    CHECK(dx_close(one, conn) == DX_OK); /* closing a connection that is still connecting */
-    dx_destroy(one);
-    dx_destroy(ctx);
+    c2s2c_ctx* one = c2s2c_create(&cfg);
+    CHECK(c2s2c_connect(one, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &conn) == C2S2C_OK);
+    CHECK(c2s2c_connect(one, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &conn) ==
+          C2S2C_ERR_LIMIT);
+    CHECK(c2s2c_close(one, conn) == C2S2C_OK); /* closing a connection that is still connecting */
+    c2s2c_destroy(one);
+    c2s2c_destroy(ctx);
 }
 
 static void test_send_errors(void)
 {
     side S = {0}, C = {0};
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_payload = 64;
     cfg.max_conns = 4;
-    S.ctx = dx_create(&cfg);
-    C.ctx = dx_create(&cfg);
-    dx_listen(S.ctx, "127.0.0.1", 0);
+    S.ctx = c2s2c_create(&cfg);
+    C.ctx = c2s2c_create(&cfg);
+    c2s2c_listen(S.ctx, "127.0.0.1", 0);
     uint32_t cconn;
-    dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &cconn);
+    c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &cconn);
     WAIT_UNTIL(S, C, S.connected == 1 && C.connected == 1);
     uint8_t b[4] = {0};
 
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_UPLOAD, NULL, 3) == DX_ERR_INVALID_ARG);
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PING, b, 100) == DX_ERR_TOO_LARGE);
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PONG, b, 4) ==
-          DX_ERR_BAD_ID); /* a client may not send STOC */
-    CHECK(dx_send(S.ctx, S.conn, DX_PKT_PING, b, 4) == DX_ERR_BAD_ID); /* nor a server CTOS */
-    CHECK(dx_send(C.ctx, cconn, 0x0100, b, 0) == DX_ERR_UNKNOWN_ID);
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PING, b, 3) == DX_ERR_TRUNCATED); /* ping is a u32 */
-    CHECK(dx_send(NULL, cconn, DX_PKT_PING, b, 4) == DX_ERR_BAD_CONN);
-    CHECK(dx_send(C.ctx, 0, DX_PKT_PING, b, 4) == DX_ERR_BAD_CONN);
-    CHECK(dx_send_batch(C.ctx, NULL, 1) == DX_ERR_INVALID_ARG);
-    CHECK(dx_send_batch(C.ctx, (dx_outgoing[1]){{cconn, DX_PKT_PING, 0, b, 4}}, -1) ==
-          DX_ERR_INVALID_ARG);
-    dx_outgoing batch[3] = {{cconn, DX_PKT_PING, 0, b, 4},
-                            {cconn, DX_PKT_PING, 0, b, 4},
-                            {cconn, DX_PKT_PONG, 0, b, 4}};
-    CHECK(dx_send_batch(C.ctx, batch, 3) == 2); /* stops at the first failure */
-    CHECK(dx_poll(C.ctx, NULL, 1, 0) == DX_ERR_INVALID_ARG);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_UPLOAD, NULL, 3) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PING, b, 100) == C2S2C_ERR_TOO_LARGE);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PONG, b, 4) ==
+          C2S2C_ERR_BAD_ID); /* a client may not send STOC */
+    CHECK(c2s2c_send(S.ctx, S.conn, C2S2C_PKT_PING, b, 4) ==
+          C2S2C_ERR_BAD_ID); /* nor a server CTOS */
+    CHECK(c2s2c_send(C.ctx, cconn, 0x0100, b, 0) == C2S2C_ERR_UNKNOWN_ID);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PING, b, 3) ==
+          C2S2C_ERR_TRUNCATED); /* ping is a u32 */
+    CHECK(c2s2c_send(NULL, cconn, C2S2C_PKT_PING, b, 4) == C2S2C_ERR_BAD_CONN);
+    CHECK(c2s2c_send(C.ctx, 0, C2S2C_PKT_PING, b, 4) == C2S2C_ERR_BAD_CONN);
+    CHECK(c2s2c_send_batch(C.ctx, NULL, 1) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_send_batch(C.ctx, (c2s2c_outgoing[1]){{cconn, C2S2C_PKT_PING, 0, b, 4}}, -1) ==
+          C2S2C_ERR_INVALID_ARG);
+    c2s2c_outgoing batch[3] = {{cconn, C2S2C_PKT_PING, 0, b, 4},
+                               {cconn, C2S2C_PKT_PING, 0, b, 4},
+                               {cconn, C2S2C_PKT_PONG, 0, b, 4}};
+    CHECK(c2s2c_send_batch(C.ctx, batch, 3) == 2); /* stops at the first failure */
+    CHECK(c2s2c_poll(C.ctx, NULL, 1, 0) == C2S2C_ERR_INVALID_ARG);
 
-    CHECK(dx_close(C.ctx, cconn) == DX_OK);
-    CHECK(dx_close(C.ctx, cconn) == DX_ERR_BAD_CONN); /* already gone: the old handle is stale */
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PING, b, 4) == DX_ERR_BAD_CONN); /* closing or closed */
+    CHECK(c2s2c_close(C.ctx, cconn) == C2S2C_OK);
+    CHECK(c2s2c_close(C.ctx, cconn) ==
+          C2S2C_ERR_BAD_CONN); /* already gone: the old handle is stale */
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PING, b, 4) ==
+          C2S2C_ERR_BAD_CONN); /* closing or closed */
     WAIT_UNTIL(S, C, S.disconnected == 1);
-    CHECK(dx_close(C.ctx, 0xDEADBEEFu) == DX_ERR_BAD_CONN);
-    dx_release(C.ctx, -5); /* nonsense counts are ignored */
-    dx_release(NULL, 1);
-    dx_destroy(S.ctx);
-    dx_destroy(C.ctx);
+    CHECK(c2s2c_close(C.ctx, 0xDEADBEEFu) == C2S2C_ERR_BAD_CONN);
+    c2s2c_release(C.ctx, -5); /* nonsense counts are ignored */
+    c2s2c_release(NULL, 1);
+    c2s2c_destroy(S.ctx);
+    c2s2c_destroy(C.ctx);
 }
 
 /* Waits for the CONNECTED event of the connection the context accepted (not its own outgoing). */
-static uint32_t accept_one(dx_ctx* ctx, const uint32_t* outgoing, int n_out)
+static uint32_t accept_one(c2s2c_ctx* ctx, const uint32_t* outgoing, int n_out)
 {
     uint64_t t0 = test_now_ms();
     while (test_now_ms() - t0 < 5000) {
-        dx_packet pk[16];
-        int n = dx_poll(ctx, pk, 16, 1);
+        c2s2c_packet pk[16];
+        int n = c2s2c_poll(ctx, pk, 16, 1);
         for (int i = 0; i < n; i++) {
             int mine = 0;
             for (int k = 0; k < n_out; k++)
                 mine |= pk[i].conn == outgoing[k];
-            if (pk[i].packet_id == DX_SYS_CONNECTED && !mine) {
+            if (pk[i].packet_id == C2S2C_SYS_CONNECTED && !mine) {
                 uint32_t h = pk[i].conn;
-                dx_release(ctx, n);
+                c2s2c_release(ctx, n);
                 return h;
             }
         }
-        dx_release(ctx, n);
+        c2s2c_release(ctx, n);
     }
     return 0;
 }
 
 static void test_tunnel_errors(void)
 {
-    CHECK(dx_flush(NULL) == DX_ERR_INVALID_ARG);
-    dx_ctx* ctx = dx_create(NULL);
-    dx_listen(ctx, "127.0.0.1", 0);
+    CHECK(c2s2c_flush(NULL) == C2S2C_ERR_INVALID_ARG);
+    c2s2c_ctx* ctx = c2s2c_create(NULL);
+    c2s2c_listen(ctx, "127.0.0.1", 0);
     uint32_t out[2];
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[0]);
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[1]);
+    c2s2c_connect(ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &out[0]);
+    c2s2c_connect(ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &out[1]);
     uint32_t acc = accept_one(ctx, out, 2);
-    uint16_t ids[DX_TUNNEL_MAX_DROP + 1] = {0};
+    uint16_t ids[C2S2C_TUNNEL_MAX_DROP + 1] = {0};
     CHECK(acc != 0);
-    CHECK(dx_tunnel(NULL, out[0], acc, NULL, 0) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, out[0], out[0], NULL, 0) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, out[0], out[1], NULL, 0) == DX_ERR_INVALID_ARG); /* both outgoing */
-    CHECK(dx_tunnel(ctx, out[0], acc, ids, DX_TUNNEL_MAX_DROP + 1) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, out[0], acc, NULL, 2) == DX_ERR_INVALID_ARG);
-    CHECK(dx_tunnel(ctx, out[0], 0xBEEF0001u, NULL, 0) == DX_ERR_BAD_CONN);
-    CHECK(dx_tunnel(ctx, out[0], acc, ids, 1) == DX_OK);
-    CHECK(dx_tunnel(ctx, out[1], acc, NULL, 0) == DX_ERR_INVALID_ARG); /* acc is already relayed */
-    dx_destroy(ctx);
+    CHECK(c2s2c_tunnel(NULL, out[0], acc, NULL, 0) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_tunnel(ctx, out[0], out[0], NULL, 0) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_tunnel(ctx, out[0], out[1], NULL, 0) == C2S2C_ERR_INVALID_ARG); /* both outgoing */
+    CHECK(c2s2c_tunnel(ctx, out[0], acc, ids, C2S2C_TUNNEL_MAX_DROP + 1) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_tunnel(ctx, out[0], acc, NULL, 2) == C2S2C_ERR_INVALID_ARG);
+    CHECK(c2s2c_tunnel(ctx, out[0], 0xBEEF0001u, NULL, 0) == C2S2C_ERR_BAD_CONN);
+    CHECK(c2s2c_tunnel(ctx, out[0], acc, ids, 1) == C2S2C_OK);
+    CHECK(c2s2c_tunnel(ctx, out[1], acc, NULL, 0) ==
+          C2S2C_ERR_INVALID_ARG); /* acc is already relayed */
+    c2s2c_destroy(ctx);
 
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_tunnels = 1;
-    ctx = dx_create(&cfg);
-    dx_listen(ctx, "127.0.0.1", 0);
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[0]);
+    ctx = c2s2c_create(&cfg);
+    c2s2c_listen(ctx, "127.0.0.1", 0);
+    c2s2c_connect(ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &out[0]);
     uint32_t a1 = accept_one(ctx, out, 1);
-    dx_connect(ctx, "127.0.0.1", (uint16_t)dx_listen_port(ctx), &out[1]);
+    c2s2c_connect(ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(ctx), &out[1]);
     uint32_t a2 = accept_one(ctx, out, 2);
-    CHECK(dx_tunnel(ctx, out[0], a1, NULL, 0) == DX_OK);
-    CHECK(dx_tunnel(ctx, out[1], a2, NULL, 0) == DX_ERR_LIMIT); /* table of one is full */
-    dx_destroy(ctx);
+    CHECK(c2s2c_tunnel(ctx, out[0], a1, NULL, 0) == C2S2C_OK);
+    CHECK(c2s2c_tunnel(ctx, out[1], a2, NULL, 0) == C2S2C_ERR_LIMIT); /* table of one is full */
+    c2s2c_destroy(ctx);
 }
 
-/* Regression: dx_poll must honour short timeouts even after a long pause between calls (it once
+/* Regression: c2s2c_poll must honour short timeouts even after a long pause between calls (it once
  * measured the remaining time from a stale clock and waited up to 100 ms instead of 1 ms). */
 static void test_poll_timeout(void)
 {
-    dx_ctx* ctx = dx_create(NULL);
-    dx_packet pk[4];
-    dx_poll(ctx, pk, 4, 0);
+    c2s2c_ctx* ctx = c2s2c_create(NULL);
+    c2s2c_packet pk[4];
+    c2s2c_poll(ctx, pk, 4, 0);
     uint64_t pause = test_now_ms();
     while (test_now_ms() - pause < 300) {
     } /* a long gap without polling */
     uint64_t worst = 0;
     for (int i = 0; i < 20; i++) {
         uint64_t t0 = test_now_ms();
-        CHECK(dx_poll(ctx, pk, 4, 1) == 0);
+        CHECK(c2s2c_poll(ctx, pk, 4, 1) == 0);
         if (test_now_ms() - t0 > worst) worst = test_now_ms() - t0;
     }
     CHECK(worst < 50); /* 1 ms asked; generous margin for a loaded machine, far below 100 ms */
-    dx_destroy(ctx);
+    c2s2c_destroy(ctx);
 }
 
 int main(void)
@@ -237,5 +243,5 @@ int main(void)
     test_listen_and_connect_errors();
     test_send_errors();
     test_tunnel_errors();
-    return dx_test_done();
+    return c2s2c_test_done();
 }

@@ -1,7 +1,7 @@
 {
-  "name": "duplex",
+  "name": "c2s2c",
   "version": "0.1.0",
-  "description": "Node.js / TypeScript binding of the Duplex packet library (N-API)",
+  "description": "Node.js / TypeScript binding of the C2S2C packet library (N-API)",
   "type": "module",
   "main": "Source/index.ts",
   "types": "index.d.ts",

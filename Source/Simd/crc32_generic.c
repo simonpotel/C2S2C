@@ -1,6 +1,6 @@
 /* crc32_generic.c - portable CRC-32C (Castagnoli), one table lookup per byte.
  * SPDX-License-Identifier: MIT */
-#include "dx_simd.h"
+#include "c2s2c_simd.h"
 
 /*
  * CRC-32C is the checksum used by iSCSI, ext4 and many storage protocols; modern CPUs compute it
@@ -50,7 +50,7 @@ static const uint32_t table[256] = {
     0xBE2DA0A5u, 0x4C4623A6u, 0x5F16D052u, 0xAD7D5351u,
 };
 
-uint32_t dx_crc32c_generic(uint32_t crc, const uint8_t* data, size_t len)
+uint32_t c2s2c_crc32c_generic(uint32_t crc, const uint8_t* data, size_t len)
 {
     crc = ~crc; /* the register starts all ones; the final inversion is done at the end */
     for (size_t i = 0; i < len; i++)

@@ -5,8 +5,8 @@
 #include <string.h>
 #include <time.h>
 
-#include "Duplex/duplex.h"
-#include "dx_packets.h"
+#include "C2S2C/c2s2c.h"
+#include "c2s2c_packets.h"
 
 /*
  * Usage: loadgen <port> <connections> <seconds> <in-flight per connection>
@@ -36,26 +36,26 @@ static uint32_t* hist;
 static int by_handle[65536]; /* low 16 bits of a handle -> index in links */
 static unsigned lost, inflight;
 static uint64_t done_total, measuring_from;
-static dx_ctx* ctx;
+static c2s2c_ctx* ctx;
 
 static void fire(link* l)
 {
     uint8_t nonce[4] = {1, 2, 3, 4};
-    if (l->count < inflight && dx_send(ctx, l->handle, DX_PKT_PING, nonce, 4) == DX_OK) {
+    if (l->count < inflight && c2s2c_send(ctx, l->handle, C2S2C_PKT_PING, nonce, 4) == C2S2C_OK) {
         l->sent_at[(l->head + l->count++) % MAX_INFLIGHT] = now_us();
     }
 }
 
 static unsigned pump(void)
 {
-    dx_packet pk[256];
-    int n = dx_poll(ctx, pk, 256, 0);
+    c2s2c_packet pk[256];
+    int n = c2s2c_poll(ctx, pk, 256, 0);
     unsigned pongs = 0;
     uint64_t t = now_us();
     for (int i = 0; i < n; i++) {
-        if (pk[i].packet_id == DX_SYS_DISCONNECTED) {
+        if (pk[i].packet_id == C2S2C_SYS_DISCONNECTED) {
             lost++;
-        } else if (pk[i].packet_id == DX_PKT_PONG) {
+        } else if (pk[i].packet_id == C2S2C_PKT_PONG) {
             link* l = &links[by_handle[pk[i].conn & 0xFFFF]];
             if (l->count) {
                 uint64_t lat = t - l->sent_at[l->head];
@@ -70,7 +70,7 @@ static unsigned pump(void)
             pongs++;
         }
     }
-    dx_release(ctx, n);
+    c2s2c_release(ctx, n);
     return pongs;
 }
 
@@ -90,15 +90,15 @@ int main(int argc, char** argv)
     inflight = (unsigned)atoi(argv[4]);
     if (inflight > MAX_INFLIGHT || conns > 60000) return 2;
 
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_conns = conns + 1;
     cfg.max_payload = 256;
     cfg.rx_ring_bytes = 1u << 20;
     cfg.rx_queue = 16384;
     cfg.tx_bytes = 4096;
     cfg.idle_timeout_ms = 3600000;
-    ctx = dx_create(&cfg);
+    ctx = c2s2c_create(&cfg);
     links = calloc(conns, sizeof *links);
     hist = calloc(BUCKETS, sizeof *hist);
     if (!ctx || !links || !hist) return 1;
@@ -106,23 +106,23 @@ int main(int argc, char** argv)
     /* Connect in bursts (the kernel's accept queue is short) and wait until all are up. */
     unsigned up = 0;
     for (unsigned i = 0; i < conns; i++) {
-        if (dx_connect(ctx, "127.0.0.1", port, &links[i].handle) != DX_OK) return 1;
+        if (c2s2c_connect(ctx, "127.0.0.1", port, &links[i].handle) != C2S2C_OK) return 1;
         by_handle[links[i].handle & 0xFFFF] = (int)i;
         if (i % 32 == 31) {
-            dx_packet pk[256];
-            int n = dx_poll(ctx, pk, 256, 1);
+            c2s2c_packet pk[256];
+            int n = c2s2c_poll(ctx, pk, 256, 1);
             for (int k = 0; k < n; k++)
-                up += pk[k].packet_id == DX_SYS_CONNECTED;
-            dx_release(ctx, n);
+                up += pk[k].packet_id == C2S2C_SYS_CONNECTED;
+            c2s2c_release(ctx, n);
         }
     }
     uint64_t deadline = now_us() + 10000000u;
     while (up < conns && now_us() < deadline) {
-        dx_packet pk[256];
-        int n = dx_poll(ctx, pk, 256, 10);
+        c2s2c_packet pk[256];
+        int n = c2s2c_poll(ctx, pk, 256, 10);
         for (int k = 0; k < n; k++)
-            up += pk[k].packet_id == DX_SYS_CONNECTED;
-        dx_release(ctx, n);
+            up += pk[k].packet_id == C2S2C_SYS_CONNECTED;
+        c2s2c_release(ctx, n);
     }
     if (up < conns) {
         printf("connections %u of %u\n", up, conns);
@@ -142,6 +142,6 @@ int main(int argc, char** argv)
     printf("p50 %.0f us\n", percentile(0.50));
     printf("p99 %.0f us\n", percentile(0.99));
     printf("lost_connections %u\n", lost);
-    dx_destroy(ctx);
+    c2s2c_destroy(ctx);
     return 0;
 }

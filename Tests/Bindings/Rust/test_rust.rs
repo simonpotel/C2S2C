@@ -1,7 +1,7 @@
 //! Tests of the Rust binding: errors, codec, release (via back-pressure), handlers and hooks.
 //! SPDX-License-Identifier: MIT
-use duplex::registry::*;
-use duplex::{Config, Context, Error, Hooks, Reader, Writer};
+use c2s2c::registry::*;
+use c2s2c::{Config, Context, Error, Hooks, Reader, Writer};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};

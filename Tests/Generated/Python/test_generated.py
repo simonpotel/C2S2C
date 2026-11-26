@@ -7,7 +7,7 @@ from pathlib import Path
 
 # The generated module lives in Generated/Python (two levels above Tests/Generated/Python).
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "Generated/Python"))
-import duplex_registry as reg  # noqa: E402
+import c2s2c_registry as reg  # noqa: E402
 
 passed = failed = 0
 lines = Path(sys.argv[1]).read_text().split("\n")

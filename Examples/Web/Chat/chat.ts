@@ -1,10 +1,10 @@
-// chat.ts - the web chat page: Duplex in the browser (WebAssembly codec + WebSocket).
+// chat.ts - the web chat page: C2S2C in the browser (WebAssembly codec + WebSocket).
 // SPDX-License-Identifier: MIT
 //
 // Same protocol as the C, C++, Python, Rust and Node chat clients: login, chat_send, and the
 // server's login_ok / chat_message. The page is served by Examples/Web/Gateway/gateway.ts.
-import { WebClient } from "../../../Bindings/Wasm/Source/duplex_web.ts";
-import { loadCodec } from "../../../Bindings/Wasm/Source/duplex_wasm.ts";
+import { WebClient } from "../../../Bindings/Wasm/Source/c2s2c_web.ts";
+import { loadCodec } from "../../../Bindings/Wasm/Source/c2s2c_wasm.ts";
 import * as reg from "../../../Generated/TypeScript/registry.ts";
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement & HTMLInputElement;
@@ -15,7 +15,7 @@ const log = (text: string) => {
   $("log").scrollTop = $("log").scrollHeight;
 };
 
-const codec = await loadCodec(await (await fetch("/duplex_codec.wasm")).arrayBuffer());
+const codec = await loadCodec(await (await fetch("/c2s2c_codec.wasm")).arrayBuffer());
 const client = await WebClient.connect(`ws://${location.host}/ws`, codec);
 $("status").textContent = "connected";
 

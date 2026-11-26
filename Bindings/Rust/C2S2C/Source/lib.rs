@@ -1,4 +1,4 @@
-//! Safe Rust binding of the Duplex packet library.
+//! Safe Rust binding of the C2S2C packet library.
 //! SPDX-License-Identifier: MIT
 //!
 //! The C library hands out raw pointers that must be given back in order and
@@ -13,7 +13,7 @@
 //! A context must be used by one thread at a time: it can be moved to another thread but not
 //! shared (it is `Send`, not `Sync`).
 
-use duplex_sys as sys;
+use c2s2c_sys as sys;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
@@ -33,7 +33,7 @@ const ERR_OVERFLOW: i32 = -12;
 const ERR_NO_MEMORY: i32 = -18;
 const ERR_REJECTED: i32 = -22;
 
-/// A library error: the `DX_ERR_*` code (negative) and its message.
+/// A library error: the `C2S2C_ERR_*` code (negative) and its message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Error(pub i32);
 
@@ -46,10 +46,10 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0 == ERR_ABI_MISMATCH {
-            return write!(f, "incompatible libduplex version");
+            return write!(f, "incompatible libc2s2c version");
         }
-        // SAFETY: dx_strerror returns a static NUL-terminated string, never NULL.
-        let text = unsafe { CStr::from_ptr(sys::dx_strerror(self.0)) };
+        // SAFETY: c2s2c_strerror returns a static NUL-terminated string, never NULL.
+        let text = unsafe { CStr::from_ptr(sys::c2s2c_strerror(self.0)) };
         write!(f, "{}", text.to_string_lossy())
     }
 }
@@ -190,7 +190,7 @@ pub struct Packet<'a> {
 
 impl<'a> Packet<'a> {
     /// SAFETY: `raw` must come from the library and stay valid for 'a (it does: see Batch).
-    unsafe fn from_raw(raw: &sys::dx_packet) -> Packet<'a> {
+    unsafe fn from_raw(raw: &sys::c2s2c_packet) -> Packet<'a> {
         let data = if raw.length == 0 {
             &[][..]
         } else {
@@ -204,7 +204,7 @@ impl<'a> Packet<'a> {
     pub fn reader(&self) -> Reader<'a> {
         Reader::new(self.data)
     }
-    /// Reason of a `DX_SYS_DISCONNECTED` event: 0 for a normal close, negative for an error.
+    /// Reason of a `C2S2C_SYS_DISCONNECTED` event: 0 for a normal close, negative for an error.
     pub fn reason(&self) -> Result<i32> {
         Ok(self.reader().u32()? as i32)
     }
@@ -213,7 +213,7 @@ impl<'a> Packet<'a> {
 /// The packets of one [`Handle::poll`]. They are given back to the library when it is dropped.
 pub struct Batch<'a> {
     handle: &'a Handle,
-    raw: Vec<sys::dx_packet>,
+    raw: Vec<sys::c2s2c_packet>,
 }
 
 impl<'a> Batch<'a> {
@@ -233,7 +233,7 @@ impl Drop for Batch<'_> {
     fn drop(&mut self) {
         if !self.raw.is_empty() {
             // SAFETY: releases exactly the entries this poll handed out.
-            unsafe { sys::dx_release(self.handle.raw, self.raw.len() as c_int) };
+            unsafe { sys::c2s2c_release(self.handle.raw, self.raw.len() as c_int) };
         }
     }
 }
@@ -241,13 +241,13 @@ impl Drop for Batch<'_> {
 // ---------------------------------------------------------------- context
 
 /// Settings for [`Context::with_config`]; start from `Config::default()`.
-pub struct Config(sys::dx_config);
+pub struct Config(sys::c2s2c_config);
 
 impl Default for Config {
     fn default() -> Self {
-        let mut cfg = std::mem::MaybeUninit::<sys::dx_config>::uninit();
-        // SAFETY: dx_config_default fills the whole structure.
-        unsafe { sys::dx_config_default(cfg.as_mut_ptr()) };
+        let mut cfg = std::mem::MaybeUninit::<sys::c2s2c_config>::uninit();
+        // SAFETY: c2s2c_config_default fills the whole structure.
+        unsafe { sys::c2s2c_config_default(cfg.as_mut_ptr()) };
         Config(unsafe { cfg.assume_init() })
     }
 }
@@ -290,7 +290,7 @@ pub struct Hooks {
 
 /// What a context can do. Handlers receive a `&Handle`, and a [`Context`] dereferences to one.
 pub struct Handle {
-    raw: *mut sys::dx_ctx,
+    raw: *mut sys::c2s2c_ctx,
     inner: *const Inner,
 }
 
@@ -322,7 +322,7 @@ impl std::ops::Deref for Context {
 impl Drop for Context {
     fn drop(&mut self) {
         // SAFETY: we own the context; nothing can use it after this.
-        unsafe { sys::dx_destroy(self.handle.raw) };
+        unsafe { sys::c2s2c_destroy(self.handle.raw) };
     }
 }
 
@@ -335,13 +335,13 @@ impl Context {
         Self::create(&cfg.0)
     }
 
-    fn create(cfg: *const sys::dx_config) -> Result<Context> {
+    fn create(cfg: *const sys::c2s2c_config) -> Result<Context> {
         // SAFETY: plain function calls; cfg is NULL or points to a valid config.
-        let abi = unsafe { sys::dx_abi_version() };
+        let abi = unsafe { sys::c2s2c_abi_version() };
         if abi >> 16 != sys::EXPECTED_ABI >> 16 || abi < sys::EXPECTED_ABI {
             return Err(Error(ERR_ABI_MISMATCH));
         }
-        let raw = unsafe { sys::dx_create(cfg) };
+        let raw = unsafe { sys::c2s2c_create(cfg) };
         if raw.is_null() {
             return Err(Error(ERR_NO_MEMORY));
         }
@@ -368,12 +368,12 @@ impl Context {
         let inner = self.inner();
         for p in batch.iter() {
             match p.id {
-                sys::DX_SYS_CONNECTED => {
+                sys::C2S2C_SYS_CONNECTED => {
                     if let Some(f) = inner.hooks.borrow_mut().on_connect.as_mut() {
                         f(p.conn);
                     }
                 }
-                sys::DX_SYS_DISCONNECTED => {
+                sys::C2S2C_SYS_DISCONNECTED => {
                     let reason = p.reason()?;
                     let mut hooks = inner.hooks.borrow_mut();
                     if reason < 0 {
@@ -413,22 +413,22 @@ impl Context {
 impl Handle {
     pub fn listen(&self, addr: &str, port: u16) -> Result<()> {
         let addr = CString::new(addr).map_err(|_| Error(-1))?;
-        check(unsafe { sys::dx_listen(self.raw, addr.as_ptr(), port) }).map(|_| ())
+        check(unsafe { sys::c2s2c_listen(self.raw, addr.as_ptr(), port) }).map(|_| ())
     }
 
     pub fn port(&self) -> Result<u16> {
-        check(unsafe { sys::dx_listen_port(self.raw) }).map(|p| p as u16)
+        check(unsafe { sys::c2s2c_listen_port(self.raw) }).map(|p| p as u16)
     }
 
     pub fn connect(&self, addr: &str, port: u16) -> Result<u32> {
         let addr = CString::new(addr).map_err(|_| Error(-1))?;
         let mut conn = 0u32;
-        check(unsafe { sys::dx_connect(self.raw, addr.as_ptr(), port, &mut conn) })?;
+        check(unsafe { sys::c2s2c_connect(self.raw, addr.as_ptr(), port, &mut conn) })?;
         Ok(conn)
     }
 
     pub fn close(&self, conn: u32) -> Result<()> {
-        check(unsafe { sys::dx_close(self.raw, conn) }).map(|_| ())
+        check(unsafe { sys::c2s2c_close(self.raw, conn) }).map(|_| ())
     }
 
     /// Queues a packet (written at the next poll/dispatch, or by `flush`).
@@ -444,30 +444,30 @@ impl Handle {
                 }
             }
         }
-        check(unsafe { sys::dx_send(self.raw, conn, id, data.as_ptr(), data.len() as u32) }).map(|_| ())
+        check(unsafe { sys::c2s2c_send(self.raw, conn, id, data.as_ptr(), data.len() as u32) }).map(|_| ())
     }
 
     /// Like `send`, but returns `Ok(false)` instead of an error when the send buffer is full.
     pub fn try_send(&self, conn: u32, id: u16, data: &[u8]) -> Result<bool> {
         match self.send(conn, id, data) {
             Ok(()) => Ok(true),
-            Err(Error(sys::DX_ERR_WOULD_BLOCK)) => Ok(false),
+            Err(Error(sys::C2S2C_ERR_WOULD_BLOCK)) => Ok(false),
             Err(e) => Err(e),
         }
     }
 
     /// Writes queued packets now (only needed when no poll/dispatch follows).
     pub fn flush(&self) -> Result<()> {
-        check(unsafe { sys::dx_flush(self.raw) }).map(|_| ())
+        check(unsafe { sys::c2s2c_flush(self.raw) }).map(|_| ())
     }
 
     /// Waits up to `timeout_ms` and returns up to 64 packets, released when the batch is dropped.
     pub fn poll(&self, timeout_ms: i32) -> Result<Batch<'_>> {
         let mut raw = vec![
-            sys::dx_packet { conn: 0, sequence: 0, data: std::ptr::null(), length: 0, packet_id: 0, flags: 0, reserved: 0 };
+            sys::c2s2c_packet { conn: 0, sequence: 0, data: std::ptr::null(), length: 0, packet_id: 0, flags: 0, reserved: 0 };
             64
         ];
-        let n = check(unsafe { sys::dx_poll(self.raw, raw.as_mut_ptr(), 64, timeout_ms) })?;
+        let n = check(unsafe { sys::c2s2c_poll(self.raw, raw.as_mut_ptr(), 64, timeout_ms) })?;
         raw.truncate(n as usize);
         Ok(Batch { handle: self, raw })
     }

@@ -1,4 +1,4 @@
-/* hostile.c - robustness check of a Duplex-protocol server: hostile and broken traffic.
+/* hostile.c - robustness check of a C2S2C-protocol server: hostile and broken traffic.
  * SPDX-License-Identifier: MIT */
 #include <arpa/inet.h>
 #include <errno.h>

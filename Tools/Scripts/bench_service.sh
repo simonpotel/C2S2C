@@ -1,8 +1,8 @@
 #!/bin/sh
 # Service benchmark: the same ping/pong service, written three ways per language, compared.
-#   C           libduplex directly (the best case: no language layer)
-#   <lang> naive    written from scratch, without libduplex (what you write when you recode the protocol)
-#   <lang> duplex   on top of the binding: "poll" = a loop over batches (replies sent in one call
+#   C           libc2s2c directly (the best case: no language layer)
+#   <lang> naive    written from scratch, without libc2s2c (what you write when you recode the protocol)
+#   <lang> c2s2c   on top of the binding: "poll" = a loop over batches (replies sent in one call
 #                   where the language makes calls costly), "dispatch" = the binding's handlers
 # For each: throughput and latency under load (same C load generator), memory, how many lines the
 # server takes, and how it behaves against hostile traffic (same C checker).
@@ -14,8 +14,8 @@ conns=64
 inflight=4
 case "$build" in *elease*) rust=Build/Rust/release ;; *) rust=Build/Rust/debug ;; esac
 build=$(cd "$build" && pwd) # absolute paths: the language runtimes load files from other folders
-lib=$(ls "$build"/libduplex.dylib "$build"/libduplex.so 2>/dev/null | head -1)
-export PYTHONPATH="$build/PythonPackage" DUPLEX_LIBRARY="$lib" DUPLEX_ADDON="$build/Tests/duplex.node"
+lib=$(ls "$build"/libc2s2c.dylib "$build"/libc2s2c.so 2>/dev/null | head -1)
+export PYTHONPATH="$build/PythonPackage" C2S2C_LIBRARY="$lib" C2S2C_ADDON="$build/Tests/c2s2c.node"
 node="node --experimental-strip-types --no-warnings"
 
 rss_mb() { kb=$(ps -o rss= -p "$1" 2>/dev/null | tr -d ' '); echo "$(( ${kb:-0} / 1024 ))"; }
@@ -47,13 +47,13 @@ run() { # name  source-files  command...
     kill $pid 2>/dev/null; wait $pid 2>/dev/null; rm -f "$out"
 }
 
-run "C (libduplex)"        Bench/Service/C/server.c                "$build"/Tests/bench_service_c
+run "C (libc2s2c)"        Bench/Service/C/server.c                "$build"/Tests/bench_service_c
 run "Rust naive"           Bench/Service/Rust/server_naive.rs      $rust/bench_service_naive
-run "Rust duplex poll"     Bench/Service/Rust/server_duplex.rs     $rust/bench_service_duplex poll
-run "Rust duplex dispatch" Bench/Service/Rust/server_duplex.rs     $rust/bench_service_duplex dispatch
+run "Rust c2s2c poll"     Bench/Service/Rust/server_c2s2c.rs     $rust/bench_service_c2s2c poll
+run "Rust c2s2c dispatch" Bench/Service/Rust/server_c2s2c.rs     $rust/bench_service_c2s2c dispatch
 run "Python naive"         Bench/Service/Python/server_naive.py    python3 Bench/Service/Python/server_naive.py
-run "Python duplex poll"   Bench/Service/Python/server_duplex.py   python3 Bench/Service/Python/server_duplex.py poll
-run "Python duplex dispatch" Bench/Service/Python/server_duplex.py python3 Bench/Service/Python/server_duplex.py dispatch
+run "Python c2s2c poll"   Bench/Service/Python/server_c2s2c.py   python3 Bench/Service/Python/server_c2s2c.py poll
+run "Python c2s2c dispatch" Bench/Service/Python/server_c2s2c.py python3 Bench/Service/Python/server_c2s2c.py dispatch
 run "Node naive"           Bench/Service/Node/server_naive.ts      $node Bench/Service/Node/server_naive.ts
-run "Node duplex poll"     Bench/Service/Node/server_duplex.ts     $node Bench/Service/Node/server_duplex.ts poll
-run "Node duplex dispatch" Bench/Service/Node/server_duplex.ts     $node Bench/Service/Node/server_duplex.ts dispatch
+run "Node c2s2c poll"     Bench/Service/Node/server_c2s2c.ts     $node Bench/Service/Node/server_c2s2c.ts poll
+run "Node c2s2c dispatch" Bench/Service/Node/server_c2s2c.ts     $node Bench/Service/Node/server_c2s2c.ts dispatch

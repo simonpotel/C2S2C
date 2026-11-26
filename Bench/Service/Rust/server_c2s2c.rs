@@ -1,10 +1,10 @@
-//! Benchmark service on the Rust binding. Usage: bench_service_duplex poll|dispatch
+//! Benchmark service on the Rust binding. Usage: bench_service_c2s2c poll|dispatch
 //! poll: a plain loop over batches; dispatch: Rust handlers (on_packet) over the same batches.
 //! SPDX-License-Identifier: MIT
-use duplex::registry::*;
-use duplex::{Config, Context};
+use c2s2c::registry::*;
+use c2s2c::{Config, Context};
 
-fn main() -> duplex::Result<()> {
+fn main() -> c2s2c::Result<()> {
     let ctx = Context::with_config(&Config::default().max_conns(4096).max_payload(1024).idle_timeout_ms(1000))?;
     ctx.listen("127.0.0.1", 0)?;
     println!("{}", ctx.port()?);

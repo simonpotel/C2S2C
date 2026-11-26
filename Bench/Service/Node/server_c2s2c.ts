@@ -1,4 +1,4 @@
-// Benchmark service on the Node binding. Usage: server_duplex.ts poll|dispatch
+// Benchmark service on the Node binding. Usage: server_c2s2c.ts poll|dispatch
 // poll: replies to a whole batch with one sendMany call; dispatch: JS handlers over the same batches.
 // SPDX-License-Identifier: MIT
 import { Context } from "../../../Bindings/Node/Source/index.ts";

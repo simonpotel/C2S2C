@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Duplex/duplex.h"
+#include "C2S2C/c2s2c.h"
 
 /*
  * What this does: libFuzzer feeds mutated byte strings here, steered by code coverage, to
@@ -13,13 +13,14 @@
  */
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
-    static const dx_field fields[] = {
-        {DX_T_U8, 0},   {DX_T_I16, 0},    {DX_T_U32, 0},   {DX_T_F64, 0},
-        {DX_T_BOOL, 0}, {DX_T_STRING, 0}, {DX_T_BYTES, 0}, {DX_T_ARRAY, DX_T_STRING}};
-    static const dx_schema schema = {8, fields};
+    static const c2s2c_field fields[] = {{C2S2C_T_U8, 0},    {C2S2C_T_I16, 0},
+                                         {C2S2C_T_U32, 0},   {C2S2C_T_F64, 0},
+                                         {C2S2C_T_BOOL, 0},  {C2S2C_T_STRING, 0},
+                                         {C2S2C_T_BYTES, 0}, {C2S2C_T_ARRAY, C2S2C_T_STRING}};
+    static const c2s2c_schema schema = {8, fields};
 
-    dx_header h;
-    (void)dx_header_decode(data, size, &h);
-    (void)dx_payload_validate_schema(&schema, data, (uint32_t)size);
+    c2s2c_header h;
+    (void)c2s2c_header_decode(data, size, &h);
+    (void)c2s2c_payload_validate_schema(&schema, data, (uint32_t)size);
     return 0;
 }

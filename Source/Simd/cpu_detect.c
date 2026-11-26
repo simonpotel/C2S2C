@@ -1,9 +1,9 @@
-/* cpu_detect.c - which CPU features are available, and the public dx_crc32c entry point.
+/* cpu_detect.c - which CPU features are available, and the public c2s2c_crc32c entry point.
  * SPDX-License-Identifier: MIT */
 #include <stdatomic.h>
 
-#include "Duplex/duplex.h"
-#include "dx_simd.h"
+#include "C2S2C/c2s2c.h"
+#include "c2s2c_simd.h"
 
 #if defined(__x86_64__)
 #include <cpuid.h>
@@ -20,7 +20,7 @@
  * works everywhere) and remember the best function in `chosen`. Two threads asking at the same
  * time just compute the same answer twice, which is harmless, so a plain atomic pointer is enough.
  */
-int dx_cpu_has_crc32c(void)
+int c2s2c_cpu_has_crc32c(void)
 {
 #if defined(__x86_64__)
     unsigned eax, ebx, ecx, edx;
@@ -36,14 +36,14 @@ int dx_cpu_has_crc32c(void)
 #endif
 }
 
-static _Atomic(dx_crc32c_fn) chosen;
+static _Atomic(c2s2c_crc32c_fn) chosen;
 
-uint32_t dx_crc32c(uint32_t crc, const uint8_t* data, size_t len)
+uint32_t c2s2c_crc32c(uint32_t crc, const uint8_t* data, size_t len)
 {
-    dx_crc32c_fn fn = atomic_load_explicit(&chosen, memory_order_relaxed);
+    c2s2c_crc32c_fn fn = atomic_load_explicit(&chosen, memory_order_relaxed);
     if (!fn) {
-        fn = dx_cpu_has_crc32c() ? dx_crc32c_hardware() : NULL;
-        if (!fn) fn = dx_crc32c_generic;
+        fn = c2s2c_cpu_has_crc32c() ? c2s2c_crc32c_hardware() : NULL;
+        if (!fn) fn = c2s2c_crc32c_generic;
         atomic_store_explicit(&chosen, fn, memory_order_relaxed);
     }
     return fn(crc, data, len);

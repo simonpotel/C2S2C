@@ -12,7 +12,7 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     env:
-      DX_STRESS_SECONDS: "2"
+      C2S2C_STRESS_SECONDS: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -62,6 +62,6 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build clang libclang-rt-dev
       - run: |
           export CC=clang
-          cmake --preset fuzz -DDX_FUZZ_SECONDS=20
+          cmake --preset fuzz -DC2S2C_FUZZ_SECONDS=20
           cmake --build --preset fuzz
           ctest --preset fuzz -L Fuzz

@@ -17,10 +17,10 @@
  * keep serving everyone else.
  */
 
-static dx_ctx* make_server(uint32_t idle_ms, uint32_t queue, uint32_t max_payload)
+static c2s2c_ctx* make_server(uint32_t idle_ms, uint32_t queue, uint32_t max_payload)
 {
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_conns = 4;
     cfg.backend = test_backend();
     cfg.idle_timeout_ms = idle_ms;
@@ -28,8 +28,8 @@ static dx_ctx* make_server(uint32_t idle_ms, uint32_t queue, uint32_t max_payloa
     if (max_payload) cfg.max_payload = max_payload;
     cfg.rx_ring_bytes = 1u << 20;
     cfg.tx_bytes = 0;
-    dx_ctx* c = dx_create(&cfg);
-    if (c) dx_listen(c, "127.0.0.1", 0);
+    c2s2c_ctx* c = c2s2c_create(&cfg);
+    if (c) c2s2c_listen(c, "127.0.0.1", 0);
     return c;
 }
 
@@ -48,38 +48,39 @@ static void expect_rejected(const char* what, const uint8_t* bytes, size_t n, in
         printf("  case '%s': reason %d, expected %d\n", what, S.reason, reason);
     CHECK(S.disconnected == 1 && S.reason == reason && S.pings == 0);
     close(fd);
-    dx_destroy(S.ctx);
+    c2s2c_destroy(S.ctx);
 }
 
 static void test_invalid_traffic(void)
 {
     uint8_t b[64];
-    raw_header(b, 0xBEEF, 1, 0, DX_PKT_PING, 0, 0);
-    expect_rejected("bad magic", b, 14, DX_ERR_BAD_MAGIC);
-    raw_header(b, DX_MAGIC, 9, 0, DX_PKT_PING, 0, 0);
-    expect_rejected("bad version", b, 14, DX_ERR_BAD_VERSION);
-    raw_header(b, DX_MAGIC, 1, 0x80, DX_PKT_PING, 0, 0);
-    expect_rejected("reserved flag bit", b, 14, DX_ERR_BAD_FLAGS);
-    raw_header(b, DX_MAGIC, 1, 1, DX_PKT_PING, 0, 0);
-    expect_rejected("direction flag vs id", b, 14, DX_ERR_BAD_ID);
-    raw_header(b, DX_MAGIC, 1, 1, DX_PKT_PONG, 4, 0);
-    expect_rejected("client sends a server packet", b, 14, DX_ERR_BAD_DIRECTION);
-    raw_header(b, DX_MAGIC, 1, 0, DX_PKT_PING, 0xFFFFFFFFu, 0);
-    expect_rejected("absurd length", b, 14, DX_ERR_TOO_LARGE);
-    raw_header(b, DX_MAGIC, 1, 0, DX_PKT_PING, 100000, 0); /* valid header, above max_payload */
-    expect_rejected("length over the configured limit", b, 14, DX_ERR_TOO_LARGE);
+    raw_header(b, 0xBEEF, 1, 0, C2S2C_PKT_PING, 0, 0);
+    expect_rejected("bad magic", b, 14, C2S2C_ERR_BAD_MAGIC);
+    raw_header(b, C2S2C_MAGIC, 9, 0, C2S2C_PKT_PING, 0, 0);
+    expect_rejected("bad version", b, 14, C2S2C_ERR_BAD_VERSION);
+    raw_header(b, C2S2C_MAGIC, 1, 0x80, C2S2C_PKT_PING, 0, 0);
+    expect_rejected("reserved flag bit", b, 14, C2S2C_ERR_BAD_FLAGS);
+    raw_header(b, C2S2C_MAGIC, 1, 1, C2S2C_PKT_PING, 0, 0);
+    expect_rejected("direction flag vs id", b, 14, C2S2C_ERR_BAD_ID);
+    raw_header(b, C2S2C_MAGIC, 1, 1, C2S2C_PKT_PONG, 4, 0);
+    expect_rejected("client sends a server packet", b, 14, C2S2C_ERR_BAD_DIRECTION);
+    raw_header(b, C2S2C_MAGIC, 1, 0, C2S2C_PKT_PING, 0xFFFFFFFFu, 0);
+    expect_rejected("absurd length", b, 14, C2S2C_ERR_TOO_LARGE);
+    raw_header(b, C2S2C_MAGIC, 1, 0, C2S2C_PKT_PING, 100000,
+               0); /* valid header, above max_payload */
+    expect_rejected("length over the configured limit", b, 14, C2S2C_ERR_TOO_LARGE);
     ping_frame(b, 1, 5); /* first packet must have sequence 0 */
-    expect_rejected("out of order sequence", b, 18, DX_ERR_BAD_SEQUENCE);
-    raw_header(b, DX_MAGIC, 1, 0, 0x0100, 0, 0);
-    expect_rejected("unknown packet id", b, 14, DX_ERR_UNKNOWN_ID);
-    raw_header(b, DX_MAGIC, 1, 0, DX_PKT_LOGIN, 4, 0); /* login = string; bytes 02 00 C0 80 */
+    expect_rejected("out of order sequence", b, 18, C2S2C_ERR_BAD_SEQUENCE);
+    raw_header(b, C2S2C_MAGIC, 1, 0, 0x0100, 0, 0);
+    expect_rejected("unknown packet id", b, 14, C2S2C_ERR_UNKNOWN_ID);
+    raw_header(b, C2S2C_MAGIC, 1, 0, C2S2C_PKT_LOGIN, 4, 0); /* login = string; bytes 02 00 C0 80 */
     b[14] = 2;
     b[15] = 0;
     b[16] = 0xC0;
     b[17] = 0x80;
-    expect_rejected("invalid UTF-8", b, 18, DX_ERR_BAD_UTF8);
-    raw_header(b, DX_MAGIC, 1, 0, DX_PKT_PING, 5, 0); /* ping payload is 4 bytes, not 5 */
-    expect_rejected("trailing byte in payload", b, 19, DX_ERR_TRAILING);
+    expect_rejected("invalid UTF-8", b, 18, C2S2C_ERR_BAD_UTF8);
+    raw_header(b, C2S2C_MAGIC, 1, 0, C2S2C_PKT_PING, 5, 0); /* ping payload is 4 bytes, not 5 */
+    expect_rejected("trailing byte in payload", b, 19, C2S2C_ERR_TRAILING);
 }
 
 /* The same valid packets give the same result however the bytes are cut. */
@@ -113,7 +114,7 @@ static void test_partial_reads(void)
     WAIT_SIDE(S, S.pings == 4);
     CHECK(S.pings == 4 && S.bad == 0 && S.disconnected == 0);
     close(fd);
-    dx_destroy(S.ctx);
+    c2s2c_destroy(S.ctx);
 }
 
 /* A hang-up between packets is clean; in the middle of one it is a truncation. */
@@ -134,7 +135,7 @@ static void test_disconnects(void)
     pump_side(&S, 5);
     close(fd);
     WAIT_SIDE(S, S.disconnected == 1);
-    CHECK(S.reason == DX_ERR_TRUNCATED && S.pings == 0);
+    CHECK(S.reason == C2S2C_ERR_TRUNCATED && S.pings == 0);
 
     S.disconnected = 0;
     fd = raw_connect(S.ctx); /* a whole packet, then hang up: the packet must still arrive */
@@ -143,7 +144,7 @@ static void test_disconnects(void)
     close(fd);
     WAIT_SIDE(S, S.disconnected == 1);
     CHECK(S.reason == 0 && S.pings == 1);
-    dx_destroy(S.ctx);
+    c2s2c_destroy(S.ctx);
 }
 
 /* slowloris: a peer that sends one byte and then nothing is dropped after the idle timeout,
@@ -156,9 +157,9 @@ static void test_slowloris(void)
     uint8_t one = 0xDE;
     SEND_RAW(slow, &one, 1);
     WAIT_SIDE(S, S.disconnected == 1);
-    CHECK(S.disconnected == 1 && S.reason == DX_ERR_TIMEOUT);
+    CHECK(S.disconnected == 1 && S.reason == C2S2C_ERR_TIMEOUT);
     close(slow);
-    dx_destroy(S.ctx);
+    c2s2c_destroy(S.ctx);
 }
 
 /* flood: 20 000 packets as fast as the socket allows against a tiny queue. Nothing is lost,
@@ -176,16 +177,16 @@ static void test_flood(void)
     for (int i = 0; i < 200; i++)
         ping_frame(burst + 18 * i, (uint32_t)i, (uint32_t)i);
     SEND_RAW(fd, burst, sizeof burst);
-    dx_packet pk[256];
+    c2s2c_packet pk[256];
     int held = 0;
     uint64_t t0 = test_now_ms();
     while (held < QUEUE + 1 && test_now_ms() - t0 < 3000) {
-        int n = dx_poll(S.ctx, pk + held, 256 - held, 1);
+        int n = c2s2c_poll(S.ctx, pk + held, 256 - held, 1);
         held += n;
     }
-    CHECK(held >= QUEUE);                                 /* includes the connected event */
-    CHECK(dx_poll(S.ctx, pk + held, 256 - held, 1) == 0); /* full: nothing more is handed out */
-    dx_release(S.ctx, held);
+    CHECK(held >= QUEUE);                                    /* includes the connected event */
+    CHECK(c2s2c_poll(S.ctx, pk + held, 256 - held, 1) == 0); /* full: nothing more is handed out */
+    c2s2c_release(S.ctx, held);
     for (int i = 0; i < held; i++)
         on_packet(&S, &pk[i]); /* count them (pointers valid until released) */
 
@@ -206,7 +207,7 @@ static void test_flood(void)
     }
     CHECK(S.pings == N && S.bad == 0 && S.disconnected == 0);
     close(fd);
-    dx_destroy(S.ctx);
+    c2s2c_destroy(S.ctx);
 }
 
 int main(void)
@@ -216,5 +217,5 @@ int main(void)
     test_disconnects();
     test_slowloris();
     test_flood();
-    return dx_test_done();
+    return c2s2c_test_done();
 }

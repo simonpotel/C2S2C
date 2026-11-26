@@ -1,6 +1,6 @@
 /* crc32_armv8.c - CRC-32C with the ARMv8 CRC32C instructions.
  * SPDX-License-Identifier: MIT */
-#include "dx_simd.h"
+#include "c2s2c_simd.h"
 
 #if defined(__aarch64__)
 #include <arm_acle.h>
@@ -26,7 +26,7 @@ __attribute__((target("+crc"))) static uint32_t crc32c_armv8(uint32_t crc, const
     return ~c;
 }
 
-dx_crc32c_fn dx_crc32c_hardware(void)
+c2s2c_crc32c_fn c2s2c_crc32c_hardware(void)
 {
     return crc32c_armv8;
 }

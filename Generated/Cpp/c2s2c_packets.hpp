@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 
-namespace duplex::pkt {
+namespace c2s2c::pkt {
 constexpr uint16_t LOGIN = 0x0001;
 constexpr uint16_t CHAT_SEND = 0x0002;
 constexpr uint16_t PING = 0x0003;
@@ -25,4 +25,4 @@ inline constexpr Info all[] = {
     {USER_LIST, "user_list", "array<string>"},
     {DOWNLOAD, "download", "bytes"},
 };
-}  // namespace duplex::pkt
+}  // namespace c2s2c::pkt

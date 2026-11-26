@@ -10,16 +10,16 @@
  * packets, and a clean close started by either side. Server and client are two contexts in the
  * same thread, polled in turn.
  */
-static dx_ctx* make_ctx(uint32_t backend)
+static c2s2c_ctx* make_ctx(uint32_t backend)
 {
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.backend = backend;
     cfg.max_conns = 8;
     cfg.max_payload = 2u << 20;
     cfg.rx_ring_bytes = 8u << 20;
     cfg.tx_bytes = 0;
-    return dx_create(&cfg);
+    return c2s2c_create(&cfg);
 }
 
 /* Sends, pumping both sides while the send buffer is full. */
@@ -28,7 +28,7 @@ static int send_retry(side* from, side* a, side* b, uint32_t conn, uint16_t id, 
 {
     uint64_t t0 = test_now_ms();
     int rc;
-    while ((rc = dx_send(from->ctx, conn, id, d, n)) == DX_ERR_WOULD_BLOCK &&
+    while ((rc = c2s2c_send(from->ctx, conn, id, d, n)) == C2S2C_ERR_WOULD_BLOCK &&
            test_now_ms() - t0 < 10000) {
         pump_side(a, 0);
         pump_side(b, 0);
@@ -46,16 +46,17 @@ static void run_backend(uint32_t backend)
     S.reply = 1;
 
     /* Handshake: both sides see the connection. */
-    CHECK(dx_listen(S.ctx, "127.0.0.1", 0) == DX_OK && dx_listen_port(S.ctx) > 0);
+    CHECK(c2s2c_listen(S.ctx, "127.0.0.1", 0) == C2S2C_OK && c2s2c_listen_port(S.ctx) > 0);
     uint32_t cconn;
-    CHECK(dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &cconn) == DX_OK);
+    CHECK(c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &cconn) ==
+          C2S2C_OK);
     WAIT_UNTIL(S, C, S.connected == 1 && C.connected == 1);
     CHECK(S.connected == 1 && C.connected == 1);
     uint32_t sconn = S.conn;
 
     /* Ping / pong. */
     uint8_t b[4] = {0, 0, 0, 0}; /* nonce 0 */
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PING, b, 4) == DX_OK);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PING, b, 4) == C2S2C_OK);
     WAIT_UNTIL(S, C, C.pongs == 1);
     CHECK(C.pongs == 1);
     S.pings = 0; /* the ordered-nonce check restarts below */
@@ -64,15 +65,15 @@ static void run_backend(uint32_t backend)
     /* 1 MiB each way, content verified byte by byte. */
     uint32_t big = 1u << 20;
     uint8_t* buf = malloc(big + 4);
-    dx_writer w;
-    dx_writer_init(&w, buf, big + 4);
+    c2s2c_writer w;
+    c2s2c_writer_init(&w, buf, big + 4);
     uint8_t* blob = malloc(big);
     for (uint32_t i = 0; i < big; i++)
         blob[i] = (uint8_t)(i * 7u);
-    dx_w_bytes(&w, blob, big);
+    c2s2c_w_bytes(&w, blob, big);
     CHECK(w.err == 0);
-    CHECK(send_retry(&C, &S, &C, cconn, DX_PKT_UPLOAD, buf, w.len) == DX_OK);
-    CHECK(send_retry(&S, &S, &C, sconn, DX_PKT_DOWNLOAD, buf, w.len) == DX_OK);
+    CHECK(send_retry(&C, &S, &C, cconn, C2S2C_PKT_UPLOAD, buf, w.len) == C2S2C_OK);
+    CHECK(send_retry(&S, &S, &C, sconn, C2S2C_PKT_DOWNLOAD, buf, w.len) == C2S2C_OK);
     WAIT_UNTIL(S, C, S.uploads == 1 && C.downloads == 1);
     CHECK(S.uploads == 1 && C.downloads == 1);
     CHECK(S.bad == 0 && C.bad == 0);
@@ -84,9 +85,9 @@ static void run_backend(uint32_t backend)
     enum { N = 10000 };
     for (uint32_t i = 0; i < N; i++) {
         uint8_t p[4];
-        dx_writer_init(&w, p, sizeof p);
-        dx_w_u32(&w, i);
-        if (send_retry(&C, &S, &C, cconn, DX_PKT_PING, p, 4) != DX_OK) {
+        c2s2c_writer_init(&w, p, sizeof p);
+        c2s2c_w_u32(&w, i);
+        if (send_retry(&C, &S, &C, cconn, C2S2C_PKT_PING, p, 4) != C2S2C_OK) {
             CHECK(0);
             break;
         }
@@ -96,61 +97,63 @@ static void run_backend(uint32_t backend)
     CHECK(S.bad == 0);
 
     /* Client closes: the server learns it, with a clean reason; the old handle is stale. */
-    CHECK(dx_close(C.ctx, cconn) == DX_OK);
+    CHECK(c2s2c_close(C.ctx, cconn) == C2S2C_OK);
     WAIT_UNTIL(S, C, S.disconnected == 1 && C.disconnected == 1);
     CHECK(S.disconnected == 1 && C.disconnected == 1);
     CHECK(S.reason == 0 && C.reason == 0);
-    CHECK(dx_send(C.ctx, cconn, DX_PKT_PING, b, 4) == DX_ERR_BAD_CONN);
+    CHECK(c2s2c_send(C.ctx, cconn, C2S2C_PKT_PING, b, 4) == C2S2C_ERR_BAD_CONN);
 
     /* Server closes the next connection: the client learns it. */
     S.disconnected = C.disconnected = 0;
     S.connected = C.connected = 0;
-    CHECK(dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &cconn) == DX_OK);
+    CHECK(c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &cconn) ==
+          C2S2C_OK);
     WAIT_UNTIL(S, C, S.connected == 1 && C.connected == 1);
     CHECK(S.connected == 1 && C.connected == 1);
-    CHECK(dx_close(S.ctx, S.conn) == DX_OK);
+    CHECK(c2s2c_close(S.ctx, S.conn) == C2S2C_OK);
     WAIT_UNTIL(S, C, S.disconnected == 1 && C.disconnected == 1);
     CHECK(S.disconnected == 1 && C.disconnected == 1);
     CHECK(C.reason == 0);
 
     CHECK(S.other == 0 && C.other == 0);
-    dx_destroy(S.ctx);
-    dx_destroy(C.ctx);
+    c2s2c_destroy(S.ctx);
+    c2s2c_destroy(C.ctx);
 }
 
 /* Connecting to a port nobody listens on ends in a disconnect event, never a hang. */
 static void test_connect_refused(void)
 {
     side S = {0}, C = {0};
-    S.ctx = make_ctx(DX_BACKEND_AUTO);
-    C.ctx = make_ctx(DX_BACKEND_AUTO);
-    dx_listen(S.ctx, "127.0.0.1", 0);
-    uint16_t port = (uint16_t)dx_listen_port(S.ctx);
-    dx_destroy(S.ctx); /* the port is now closed */
-    S.ctx = make_ctx(DX_BACKEND_AUTO);
+    S.ctx = make_ctx(C2S2C_BACKEND_AUTO);
+    C.ctx = make_ctx(C2S2C_BACKEND_AUTO);
+    c2s2c_listen(S.ctx, "127.0.0.1", 0);
+    uint16_t port = (uint16_t)c2s2c_listen_port(S.ctx);
+    c2s2c_destroy(S.ctx); /* the port is now closed */
+    S.ctx = make_ctx(C2S2C_BACKEND_AUTO);
     uint32_t conn;
-    CHECK(dx_connect(C.ctx, "127.0.0.1", port, &conn) == DX_OK);
+    CHECK(c2s2c_connect(C.ctx, "127.0.0.1", port, &conn) == C2S2C_OK);
     WAIT_UNTIL(S, C, C.disconnected == 1);
     CHECK(C.disconnected == 1);
-    CHECK(C.reason == DX_ERR_IO && C.connected == 0);
-    dx_destroy(S.ctx);
-    dx_destroy(C.ctx);
+    CHECK(C.reason == C2S2C_ERR_IO && C.connected == 0);
+    c2s2c_destroy(S.ctx);
+    c2s2c_destroy(C.ctx);
 }
 
 int main(void)
 {
-    run_backend(DX_BACKEND_POLL);
-    if (dx_io_get(DX_BACKEND_AUTO) != &dx_io_poll) run_backend(DX_BACKEND_AUTO); /* native one */
+    run_backend(C2S2C_BACKEND_POLL);
+    if (c2s2c_io_get(C2S2C_BACKEND_AUTO) != &c2s2c_io_poll)
+        run_backend(C2S2C_BACKEND_AUTO); /* native one */
 #if defined(__linux__)
     /* io_uring may be refused by the kernel or the sandbox: then it is skipped, not failed. */
-    dx_ctx* probe = make_ctx(DX_BACKEND_URING);
+    c2s2c_ctx* probe = make_ctx(C2S2C_BACKEND_URING);
     if (probe) {
-        dx_destroy(probe);
-        run_backend(DX_BACKEND_URING);
+        c2s2c_destroy(probe);
+        run_backend(C2S2C_BACKEND_URING);
     } else {
         printf("io_uring unavailable here: skipped\n");
     }
 #endif
     test_connect_refused();
-    return dx_test_done();
+    return c2s2c_test_done();
 }

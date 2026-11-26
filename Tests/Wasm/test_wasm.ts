@@ -1,20 +1,20 @@
 // test_wasm.ts - the WebAssembly codec: the shared reference vectors, checksum, frames.
 // SPDX-License-Identifier: MIT
-// Run: node --experimental-strip-types --test test_wasm.ts   (DUPLEX_WASM = path of the .wasm)
+// Run: node --experimental-strip-types --test test_wasm.ts   (C2S2C_WASM = path of the .wasm)
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { DuplexError, ERROR_MESSAGES } from "../../Bindings/Node/Source/codec.ts";
-import { loadCodec } from "../../Bindings/Wasm/Source/duplex_wasm.ts";
+import { C2S2CError, ERROR_MESSAGES } from "../../Bindings/Node/Source/codec.ts";
+import { loadCodec } from "../../Bindings/Wasm/Source/c2s2c_wasm.ts";
 import * as reg from "../../Generated/TypeScript/registry.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const codec = await loadCodec(fs.readFileSync(process.env.DUPLEX_WASM as string));
+const codec = await loadCodec(fs.readFileSync(process.env.C2S2C_WASM as string));
 
-// Error names of the vector files (DX_ERR_BAD_MAGIC...) -> codes, read from the public header.
+// Error names of the vector files (C2S2C_ERR_BAD_MAGIC...) -> codes, read from the public header.
 const codes: Record<string, number> = {};
-for (const m of fs.readFileSync(path.join(root, "Include/Duplex/dx_errors.h"), "utf8").matchAll(/#define (DX_\w+)\s+\(?(-?\d+)\)?/g)) codes[m[1]] = Number(m[2]);
+for (const m of fs.readFileSync(path.join(root, "Include/C2S2C/c2s2c_errors.h"), "utf8").matchAll(/#define (C2S2C_\w+)\s+\(?(-?\d+)\)?/g)) codes[m[1]] = Number(m[2]);
 
 test("the module loads and reports the library version", () => {
   assert.equal(codec.abiVersion() >> 16, 2);
@@ -33,7 +33,7 @@ test(`all ${vectors.length} reference vectors give the expected result`, () => {
     const expected = JSON.parse(fs.readFileSync(path.join(vectorsDir, name + ".json"), "utf8"));
     if (name.startsWith("header_")) {
       if (expected.error) {
-        assert.throws(() => codec.decodeHeader(bytes), (e: any) => e instanceof DuplexError && e.code === codes[expected.error], name);
+        assert.throws(() => codec.decodeHeader(bytes), (e: any) => e instanceof C2S2CError && e.code === codes[expected.error], name);
       } else {
         const h = codec.decodeHeader(bytes);
         const want = expected.header;

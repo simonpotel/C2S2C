@@ -1,4 +1,4 @@
-// duplex.hpp - C++17 header-only wrapper over the Duplex C API (RAII, exceptions, lambdas).
+// c2s2c.hpp - C++17 header-only wrapper over the C2S2C C API (RAII, exceptions, lambdas).
 // SPDX-License-Identifier: MIT
 //
 // The C library hands out raw pointers that must be released in the right order
@@ -6,11 +6,11 @@
 //   - Context owns the library context and frees it automatically;
 //   - Batch owns the packets of one poll and releases them when it goes out of scope, so you
 //     cannot use a packet pointer after it was given back;
-//   - errors are thrown as duplex::Error (carrying the DX_ERR_* code and its message);
+//   - errors are thrown as c2s2c::Error (carrying the C2S2C_ERR_* code and its message);
 //   - handlers and hooks are std::function (lambdas work), run in C++ over batched polls.
 #pragma once
 
-#include <Duplex/duplex.h>
+#include <C2S2C/c2s2c.h>
 
 #include <cstdint>
 #include <functional>
@@ -22,14 +22,14 @@
 #include <utility>
 #include <vector>
 
-namespace duplex
+namespace c2s2c
 {
 
-/// An error from the library: code() is the DX_ERR_* value, what() its text.
+/// An error from the library: code() is the C2S2C_ERR_* value, what() its text.
 class Error : public std::runtime_error
 {
   public:
-    explicit Error(int code) : std::runtime_error(dx_strerror(code)), code_(code) {}
+    explicit Error(int code) : std::runtime_error(c2s2c_strerror(code)), code_(code) {}
     int code() const { return code_; }
 
   private:
@@ -47,45 +47,45 @@ inline int check(int rc)
 class Writer
 {
   public:
-    Writer(uint8_t* buf, uint32_t cap) { dx_writer_init(&w_, buf, cap); }
+    Writer(uint8_t* buf, uint32_t cap) { c2s2c_writer_init(&w_, buf, cap); }
     Writer& u8(uint8_t v)
     {
-        dx_w_u8(&w_, v);
+        c2s2c_w_u8(&w_, v);
         return *this;
     }
     Writer& u16(uint16_t v)
     {
-        dx_w_u16(&w_, v);
+        c2s2c_w_u16(&w_, v);
         return *this;
     }
     Writer& u32(uint32_t v)
     {
-        dx_w_u32(&w_, v);
+        c2s2c_w_u32(&w_, v);
         return *this;
     }
     Writer& u64(uint64_t v)
     {
-        dx_w_u64(&w_, v);
+        c2s2c_w_u64(&w_, v);
         return *this;
     }
     Writer& f32(float v)
     {
-        dx_w_f32(&w_, v);
+        c2s2c_w_f32(&w_, v);
         return *this;
     }
     Writer& f64(double v)
     {
-        dx_w_f64(&w_, v);
+        c2s2c_w_f64(&w_, v);
         return *this;
     }
     Writer& string(std::string_view s)
     {
-        dx_w_string(&w_, s.data(), static_cast<uint16_t>(s.size()));
+        c2s2c_w_string(&w_, s.data(), static_cast<uint16_t>(s.size()));
         return *this;
     }
     Writer& bytes(const uint8_t* p, uint32_t n)
     {
-        dx_w_bytes(&w_, p, n);
+        c2s2c_w_bytes(&w_, p, n);
         return *this;
     }
     /// Number of bytes written; throws Error if any write failed.
@@ -96,7 +96,7 @@ class Writer
     }
 
   private:
-    dx_writer w_;
+    c2s2c_writer w_;
 };
 
 /// Reads payload fields; every call throws Error when the data is malformed or too short.
@@ -104,24 +104,24 @@ class Writer
 class Reader
 {
   public:
-    Reader(const uint8_t* data, uint32_t len) { dx_reader_init(&r_, data, len); }
-    uint8_t u8() { return ok(dx_r_u8(&r_)); }
-    uint16_t u16() { return ok(dx_r_u16(&r_)); }
-    uint32_t u32() { return ok(dx_r_u32(&r_)); }
-    uint64_t u64() { return ok(dx_r_u64(&r_)); }
-    float f32() { return ok(dx_r_f32(&r_)); }
-    double f64() { return ok(dx_r_f64(&r_)); }
+    Reader(const uint8_t* data, uint32_t len) { c2s2c_reader_init(&r_, data, len); }
+    uint8_t u8() { return ok(c2s2c_r_u8(&r_)); }
+    uint16_t u16() { return ok(c2s2c_r_u16(&r_)); }
+    uint32_t u32() { return ok(c2s2c_r_u32(&r_)); }
+    uint64_t u64() { return ok(c2s2c_r_u64(&r_)); }
+    float f32() { return ok(c2s2c_r_f32(&r_)); }
+    double f64() { return ok(c2s2c_r_f64(&r_)); }
     std::string_view string()
     {
         uint16_t n = 0;
-        const char* s = dx_r_string(&r_, &n);
+        const char* s = c2s2c_r_string(&r_, &n);
         check(r_.err);
         return {s, n};
     }
     std::pair<const uint8_t*, uint32_t> bytes()
     {
         uint32_t n = 0;
-        const uint8_t* p = dx_r_bytes(&r_, &n);
+        const uint8_t* p = c2s2c_r_bytes(&r_, &n);
         check(r_.err);
         return {p, n};
     }
@@ -132,46 +132,49 @@ class Reader
         check(r_.err);
         return v;
     }
-    dx_reader r_;
+    c2s2c_reader r_;
 };
 
 /// A received packet. Valid only while the Batch (or the handler call) that gave it is alive.
 class Packet
 {
   public:
-    explicit Packet(const dx_packet& p) : p_(p) {}
+    explicit Packet(const c2s2c_packet& p) : p_(p) {}
     uint32_t conn() const { return p_.conn; }
     uint16_t id() const { return p_.packet_id; }
     uint32_t sequence() const { return p_.sequence; }
     const uint8_t* data() const { return p_.data; }
     uint32_t size() const { return p_.length; }
     Reader reader() const { return Reader(p_.data, p_.length); }
-    /// Reason of a DX_SYS_DISCONNECTED event (0 = normal close, negative = DX_ERR_*).
+    /// Reason of a C2S2C_SYS_DISCONNECTED event (0 = normal close, negative = C2S2C_ERR_*).
     int reason() const { return static_cast<int32_t>(reader().u32()); }
 
   private:
-    dx_packet p_;
+    c2s2c_packet p_;
 };
 
 /// The packets of one Context::poll call. Releases them to the library when destroyed.
 class Batch
 {
   public:
-    Batch(dx_ctx* ctx, std::vector<dx_packet> packets) : ctx_(ctx), packets_(std::move(packets)) {}
+    Batch(c2s2c_ctx* ctx, std::vector<c2s2c_packet> packets)
+        : ctx_(ctx), packets_(std::move(packets))
+    {
+    }
     Batch(Batch&& o) noexcept : ctx_(o.ctx_), packets_(std::move(o.packets_)) { o.ctx_ = nullptr; }
     Batch& operator=(Batch&&) = delete;
     Batch(const Batch&) = delete;
     Batch& operator=(const Batch&) = delete;
     ~Batch()
     {
-        if (ctx_ && !packets_.empty()) dx_release(ctx_, static_cast<int>(packets_.size()));
+        if (ctx_ && !packets_.empty()) c2s2c_release(ctx_, static_cast<int>(packets_.size()));
     }
     size_t size() const { return packets_.size(); }
     Packet operator[](size_t i) const { return Packet(packets_[i]); }
 
   private:
-    dx_ctx* ctx_;
-    std::vector<dx_packet> packets_;
+    c2s2c_ctx* ctx_;
+    std::vector<c2s2c_packet> packets_;
 };
 
 /// Callbacks for events; every member is optional. The Context must outlive the callbacks' use.
@@ -189,29 +192,29 @@ struct Hooks {
 class Context
 {
   public:
-    explicit Context(const dx_config* cfg = nullptr) : ctx_(dx_create(cfg))
+    explicit Context(const c2s2c_config* cfg = nullptr) : ctx_(c2s2c_create(cfg))
     {
-        if (!ctx_) throw Error(DX_ERR_NO_MEMORY);
+        if (!ctx_) throw Error(C2S2C_ERR_NO_MEMORY);
     }
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
 
     void listen(const std::string& addr, uint16_t port = 0)
     {
-        check(dx_listen(ctx_.get(), addr.c_str(), port));
+        check(c2s2c_listen(ctx_.get(), addr.c_str(), port));
     }
-    int port() const { return check(dx_listen_port(ctx_.get())); }
+    int port() const { return check(c2s2c_listen_port(ctx_.get())); }
     uint32_t connect(const std::string& addr, uint16_t port)
     {
         uint32_t conn = 0;
-        check(dx_connect(ctx_.get(), addr.c_str(), port, &conn));
+        check(c2s2c_connect(ctx_.get(), addr.c_str(), port, &conn));
         return conn;
     }
-    void close(uint32_t conn) { check(dx_close(ctx_.get(), conn)); }
+    void close(uint32_t conn) { check(c2s2c_close(ctx_.get(), conn)); }
 
     /// Queues a packet (written at the next poll/dispatch, or by flush). Throws
-    /// Error(DX_ERR_WOULD_BLOCK) if the send buffer is full (see try_send), and
-    /// Error(DX_ERR_REJECTED) if the before_send hook refuses it.
+    /// Error(C2S2C_ERR_WOULD_BLOCK) if the send buffer is full (see try_send), and
+    /// Error(C2S2C_ERR_REJECTED) if the before_send hook refuses it.
     void send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
     {
         check(raw_send(conn, id, data, len));
@@ -220,18 +223,18 @@ class Context
     bool try_send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
     {
         int rc = raw_send(conn, id, data, len);
-        if (rc == DX_ERR_WOULD_BLOCK) return false;
+        if (rc == C2S2C_ERR_WOULD_BLOCK) return false;
         check(rc);
         return true;
     }
     /// Writes queued packets now (only needed when no poll/dispatch follows).
-    void flush() { check(dx_flush(ctx_.get())); }
+    void flush() { check(c2s2c_flush(ctx_.get())); }
 
     /// Waits up to timeout_ms and returns up to max packets, released when the Batch dies.
     Batch poll(int timeout_ms, int max = 64)
     {
-        std::vector<dx_packet> pk(static_cast<size_t>(max));
-        int n = check(dx_poll(ctx_.get(), pk.data(), max, timeout_ms));
+        std::vector<c2s2c_packet> pk(static_cast<size_t>(max));
+        int n = check(c2s2c_poll(ctx_.get(), pk.data(), max, timeout_ms));
         pk.resize(static_cast<size_t>(n));
         return Batch(ctx_.get(), std::move(pk));
     }
@@ -258,20 +261,21 @@ class Context
         return static_cast<int>(batch.size());
     }
 
-    /// The underlying C context, for features the wrapper does not cover (dx_tunnel...).
-    dx_ctx* raw() { return ctx_.get(); }
+    /// The underlying C context, for features the wrapper does not cover (c2s2c_tunnel...).
+    c2s2c_ctx* raw() { return ctx_.get(); }
 
   private:
     int raw_send(uint32_t conn, uint16_t id, const uint8_t* data, uint32_t len)
     {
-        if (hooks_.before_send && hooks_.before_send(conn, id, data, len)) return DX_ERR_REJECTED;
-        return dx_send(ctx_.get(), conn, id, data, len);
+        if (hooks_.before_send && hooks_.before_send(conn, id, data, len))
+            return C2S2C_ERR_REJECTED;
+        return c2s2c_send(ctx_.get(), conn, id, data, len);
     }
     void handle(const Packet& p)
     {
-        if (p.id() == DX_SYS_CONNECTED) {
+        if (p.id() == C2S2C_SYS_CONNECTED) {
             if (hooks_.on_connect) hooks_.on_connect(p.conn());
-        } else if (p.id() == DX_SYS_DISCONNECTED) {
+        } else if (p.id() == C2S2C_SYS_DISCONNECTED) {
             int reason = p.reason();
             if (reason < 0 && hooks_.on_error) hooks_.on_error(p.conn(), reason);
             if (hooks_.on_disconnect) hooks_.on_disconnect(p.conn(), reason);
@@ -282,11 +286,11 @@ class Context
         }
     }
     struct Deleter {
-        void operator()(dx_ctx* c) const { dx_destroy(c); }
+        void operator()(c2s2c_ctx* c) const { c2s2c_destroy(c); }
     };
-    std::unique_ptr<dx_ctx, Deleter> ctx_;
+    std::unique_ptr<c2s2c_ctx, Deleter> ctx_;
     std::map<uint16_t, Handler> handlers_;
     Hooks hooks_;
 };
 
-} // namespace duplex
+} // namespace c2s2c

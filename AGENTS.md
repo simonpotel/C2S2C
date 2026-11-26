@@ -1,10 +1,10 @@
 # AGENTS.md — rules (MUST / MUST NEVER)
 
 ## Purpose
-- The C library is the data path only: framing, validation, batched `dx_poll`, grouped writes, the
-  native relay (`dx_tunnel`). It MUST NEVER call back into application code; handlers and hooks
+- The C library is the data path only: framing, validation, batched `c2s2c_poll`, grouped writes, the
+  native relay (`c2s2c_tunnel`). It MUST NEVER call back into application code; handlers and hooks
   belong in the bindings, over batched polls.
-- Any claim that Duplex is faster or safer than rewriting the protocol MUST be backed by
+- Any claim that C2S2C is faster or safer than rewriting the protocol MUST be backed by
   `Tools/Scripts/bench_service.sh` and the hostile-traffic checker.
 
 ## Naming and structure
@@ -12,7 +12,7 @@
   Exceptions: `.github/`, tool dot-dirs (`.cargo/`), `node_modules/`.
 - Files MUST be `snake_case`; only conventional root files are upper-case (`README.md`,
   `AGENTS.md`, `DOCUMENTATION.md`, `LICENSE`, `CMakeLists.txt`). `check_naming.sh` MUST pass.
-- Public symbols MUST be prefixed `dx_`, macros/constants `DX_`. MUST NEVER use a `_t` suffix.
+- Public symbols MUST be prefixed `c2s2c_`, macros/constants `C2S2C_`. MUST NEVER use a `_t` suffix.
 - Documentation is `README.md` (under two minutes to read) and `DOCUMENTATION.md`; nothing else.
 - Examples exist only in Rust, Python and Node (plus the web chat).
 
@@ -23,9 +23,9 @@
   (`check_source_rules.sh`).
 
 ## ABI and API
-- MUST NEVER reorder, remove or retype a public field: append, bump `DX_ABI_VERSION`, update
+- MUST NEVER reorder, remove or retype a public field: append, bump `C2S2C_ABI_VERSION`, update
   `Tests/Abi/symbols.txt` (`check_abi.sh <lib> --print`).
-- Functions return `int`: 0 = success, < 0 = `DX_ERR_*`. MUST NEVER `abort()`/`exit()`/active `assert`.
+- Functions return `int`: 0 = success, < 0 = `C2S2C_ERR_*`. MUST NEVER `abort()`/`exit()`/active `assert`.
 - Handles are opaque; no internal struct in `Include/`.
 - An API change MUST update the API section of DOCUMENTATION.md in the same commit.
 

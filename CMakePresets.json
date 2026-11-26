@@ -6,12 +6,12 @@
     { "name": "debug", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" } },
     { "name": "release", "inherits": "base", "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } },
     { "name": "asan", "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "address;undefined" } },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "C2S2C_SANITIZE": "address;undefined" } },
     { "name": "tsan", "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "thread" } },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "C2S2C_SANITIZE": "thread" } },
     { "name": "fuzz", "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DX_SANITIZE": "address;undefined",
-                          "DX_FUZZ": "ON", "CMAKE_C_FLAGS": "-fsanitize=fuzzer-no-link" } }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "C2S2C_SANITIZE": "address;undefined",
+                          "C2S2C_FUZZ": "ON", "CMAKE_C_FLAGS": "-fsanitize=fuzzer-no-link" } }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },

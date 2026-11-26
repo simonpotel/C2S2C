@@ -13,18 +13,18 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "Duplex/dx_errors.h"
+#include "C2S2C/c2s2c_errors.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0 /* macOS: SIGPIPE is disabled per socket with SO_NOSIGPIPE instead */
 #endif
 
-int dx_net_init(void)
+int c2s2c_net_init(void)
 {
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-void dx_net_shutdown(void) {}
+void c2s2c_net_shutdown(void) {}
 
 /* Turns "127.0.0.1" or "::1" into a socket address. Names are not resolved on purpose: a DNS
  * lookup can block for seconds, which an event loop must never do. */
@@ -37,22 +37,22 @@ static int parse_addr(const char* text, uint16_t port, struct sockaddr_storage* 
         v4->sin_family = AF_INET;
         v4->sin_port = htons(port);
         *len = sizeof *v4;
-        return DX_OK;
+        return C2S2C_OK;
     }
     if (inet_pton(AF_INET6, text, &v6->sin6_addr) == 1) {
         v6->sin6_family = AF_INET6;
         v6->sin6_port = htons(port);
         *len = sizeof *v6;
-        return DX_OK;
+        return C2S2C_OK;
     }
-    return DX_ERR_INVALID_ARG;
+    return C2S2C_ERR_INVALID_ARG;
 }
 
 /* Common settings: non-blocking, close-on-exec, no Nagle delay, no SIGPIPE. */
 static int tune(int fd, int is_stream)
 {
     int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) return DX_ERR_IO;
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) return C2S2C_ERR_IO;
     (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
     if (is_stream) {
         int one = 1;
@@ -61,110 +61,112 @@ static int tune(int fd, int is_stream)
         (void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
 #endif
     }
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-int dx_net_listen(const char* addr, uint16_t port, uint16_t* bound_port)
+int c2s2c_net_listen(const char* addr, uint16_t port, uint16_t* bound_port)
 {
     struct sockaddr_storage ss;
     socklen_t len;
     int rc = parse_addr(addr, port, &ss, &len);
-    if (rc != DX_OK) return rc;
+    if (rc != C2S2C_OK) return rc;
 
     int fd = socket(ss.ss_family, SOCK_STREAM, 0);
-    if (fd < 0) return DX_ERR_IO;
+    if (fd < 0) return C2S2C_ERR_IO;
     int one = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
-    if (bind(fd, (struct sockaddr*)&ss, len) < 0 || listen(fd, 1024) < 0 || tune(fd, 0) != DX_OK) {
+    if (bind(fd, (struct sockaddr*)&ss, len) < 0 || listen(fd, 1024) < 0 ||
+        tune(fd, 0) != C2S2C_OK) {
         close(fd);
-        return DX_ERR_IO;
+        return C2S2C_ERR_IO;
     }
     /* Ask the system which port it picked (needed when port 0 was requested). */
     struct sockaddr_storage bound;
     socklen_t blen = sizeof bound;
     if (getsockname(fd, (struct sockaddr*)&bound, &blen) < 0) {
         close(fd);
-        return DX_ERR_IO;
+        return C2S2C_ERR_IO;
     }
     *bound_port = ntohs(bound.ss_family == AF_INET ? ((struct sockaddr_in*)&bound)->sin_port
                                                    : ((struct sockaddr_in6*)&bound)->sin6_port);
     return fd;
 }
 
-int dx_net_connect(const char* addr, uint16_t port)
+int c2s2c_net_connect(const char* addr, uint16_t port)
 {
     struct sockaddr_storage ss;
     socklen_t len;
     int rc = parse_addr(addr, port, &ss, &len);
-    if (rc != DX_OK) return rc;
+    if (rc != C2S2C_OK) return rc;
 
     int fd = socket(ss.ss_family, SOCK_STREAM, 0);
-    if (fd < 0) return DX_ERR_IO;
-    if (tune(fd, 1) != DX_OK) {
+    if (fd < 0) return C2S2C_ERR_IO;
+    if (tune(fd, 1) != C2S2C_OK) {
         close(fd);
-        return DX_ERR_IO;
+        return C2S2C_ERR_IO;
     }
     /* EINPROGRESS is the normal answer of a non-blocking connect: completion is reported later
-     * as "writable", and dx_net_connect_result then tells whether it worked. */
+     * as "writable", and c2s2c_net_connect_result then tells whether it worked. */
     if (connect(fd, (struct sockaddr*)&ss, len) < 0 && errno != EINPROGRESS) {
         close(fd);
-        return DX_ERR_IO;
+        return C2S2C_ERR_IO;
     }
     return fd;
 }
 
-int dx_net_accept(int listen_fd)
+int c2s2c_net_accept(int listen_fd)
 {
     int fd = accept(listen_fd, NULL, NULL);
-    if (fd < 0) return (errno == EAGAIN || errno == EWOULDBLOCK) ? DX_ERR_WOULD_BLOCK : DX_ERR_IO;
-    if (tune(fd, 1) != DX_OK) {
+    if (fd < 0)
+        return (errno == EAGAIN || errno == EWOULDBLOCK) ? C2S2C_ERR_WOULD_BLOCK : C2S2C_ERR_IO;
+    if (tune(fd, 1) != C2S2C_OK) {
         close(fd);
-        return DX_ERR_IO;
+        return C2S2C_ERR_IO;
     }
     return fd;
 }
 
-int dx_net_connect_result(int fd)
+int c2s2c_net_connect_result(int fd)
 {
     int err = 0;
     socklen_t len = sizeof err;
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) return DX_ERR_IO;
-    return DX_OK;
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) return C2S2C_ERR_IO;
+    return C2S2C_OK;
 }
 
-long dx_net_read(int fd, uint8_t* buf, size_t n)
+long c2s2c_net_read(int fd, uint8_t* buf, size_t n)
 {
     for (;;) {
         ssize_t r = recv(fd, buf, n, 0);
         if (r >= 0) return (long)r;
         if (errno == EINTR) continue;
-        return (errno == EAGAIN || errno == EWOULDBLOCK) ? DX_ERR_WOULD_BLOCK : DX_ERR_IO;
+        return (errno == EAGAIN || errno == EWOULDBLOCK) ? C2S2C_ERR_WOULD_BLOCK : C2S2C_ERR_IO;
     }
 }
 
-long dx_net_write(int fd, const uint8_t* buf, size_t n)
+long c2s2c_net_write(int fd, const uint8_t* buf, size_t n)
 {
     for (;;) {
         ssize_t r = send(fd, buf, n, MSG_NOSIGNAL);
         if (r >= 0) return (long)r;
         if (errno == EINTR) continue;
-        return (errno == EAGAIN || errno == EWOULDBLOCK) ? DX_ERR_WOULD_BLOCK : DX_ERR_IO;
+        return (errno == EAGAIN || errno == EWOULDBLOCK) ? C2S2C_ERR_WOULD_BLOCK : C2S2C_ERR_IO;
     }
 }
 
-void dx_net_close(int fd)
+void c2s2c_net_close(int fd)
 {
     close(fd);
 }
 
-uint64_t dx_net_now_ms(void)
+uint64_t c2s2c_net_now_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
 }
 
-long dx_net_raise_fd_limit(void)
+long c2s2c_net_raise_fd_limit(void)
 {
     struct rlimit rl;
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) return -1;

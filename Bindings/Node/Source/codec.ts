@@ -17,12 +17,12 @@ export const ERROR_MESSAGES: Record<number, string> = {
   [-20]: "invalid connection", [-21]: "connection timed out", [-22]: "rejected by a hook",
 };
 
-/** An error from the library: `code` is the DX_ERR_* value (negative). */
-export class DuplexError extends Error {
+/** An error from the library: `code` is the C2S2C_ERR_* value (negative). */
+export class C2S2CError extends Error {
   code: number;
   constructor(code: number) {
     super(ERROR_MESSAGES[code] ?? `error ${code}`);
-    this.name = "DuplexError";
+    this.name = "C2S2CError";
     this.code = code;
   }
 }
@@ -38,7 +38,7 @@ const FIXED: Record<string, [number, string]> = {
 
 function schemaOf(id: number): string[] {
   const entry = PACKETS.get(id);
-  if (!entry) throw new DuplexError(-13);
+  if (!entry) throw new C2S2CError(-13);
   return entry.schema ? entry.schema.split(",") : [];
 }
 

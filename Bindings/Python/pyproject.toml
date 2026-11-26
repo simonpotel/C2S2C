@@ -3,15 +3,15 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "duplex"
+name = "c2s2c"
 version = "0.1.0"
-description = "Python binding of the Duplex packet library (ctypes, no dependency)"
+description = "Python binding of the C2S2C packet library (ctypes, no dependency)"
 requires-python = ">=3.9"
 
 [tool.setuptools]
-packages = ["duplex"]
-py-modules = ["duplex_registry"]
+packages = ["c2s2c"]
+py-modules = ["c2s2c_registry"]
 
 [tool.setuptools.package-dir]
-duplex = "Source"
+c2s2c = "Source"
 "" = "../../Generated/Python"

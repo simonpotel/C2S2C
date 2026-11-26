@@ -1,7 +1,7 @@
 /* string.h - the three memory functions the codec needs, for the WebAssembly build.
  * SPDX-License-Identifier: MIT */
-#ifndef DX_WASM_STRING_H
-#define DX_WASM_STRING_H
+#ifndef C2S2C_WASM_STRING_H
+#define C2S2C_WASM_STRING_H
 
 #include <stddef.h>
 

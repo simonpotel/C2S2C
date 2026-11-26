@@ -1,12 +1,12 @@
-// duplex_web.ts - Duplex in the browser: packets over a WebSocket, checked by the WebAssembly codec.
+// c2s2c_web.ts - C2S2C in the browser: packets over a WebSocket, checked by the WebAssembly codec.
 // SPDX-License-Identifier: MIT
 //
 // A browser cannot open a raw TCP connection, so it talks to a gateway over a
-// WebSocket. Each WebSocket message carries exactly one Duplex frame (header + payload). This
+// WebSocket. Each WebSocket message carries exactly one C2S2C frame (header + payload). This
 // client builds outgoing frames and checks incoming ones with the same C code as the server.
 import { decode, encode } from "../../Node/Source/codec.ts";
 import type { Value } from "../../Node/Source/codec.ts";
-import type { Codec } from "./duplex_wasm.ts";
+import type { Codec } from "./c2s2c_wasm.ts";
 
 export interface WebPacket {
   id: number;

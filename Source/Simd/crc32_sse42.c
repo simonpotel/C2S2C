@@ -1,6 +1,6 @@
 /* crc32_sse42.c - CRC-32C with the x86-64 SSE4.2 crc32 instruction.
  * SPDX-License-Identifier: MIT */
-#include "dx_simd.h"
+#include "c2s2c_simd.h"
 
 #if defined(__x86_64__)
 #include <nmmintrin.h>
@@ -9,7 +9,7 @@
 /*
  * The crc32 instruction folds 8 bytes into the checksum per step, instead of 1 byte per table
  * lookup. The function is compiled for SSE4.2 only here (target attribute), so the rest of the
- * library still runs on older CPUs; dx_crc32c() calls it only after checking the CPU.
+ * library still runs on older CPUs; c2s2c_crc32c() calls it only after checking the CPU.
  */
 __attribute__((target("sse4.2"))) static uint32_t crc32c_sse42(uint32_t crc, const uint8_t* data,
                                                                size_t len)
@@ -28,7 +28,7 @@ __attribute__((target("sse4.2"))) static uint32_t crc32c_sse42(uint32_t crc, con
     return ~c32;
 }
 
-dx_crc32c_fn dx_crc32c_hardware(void)
+c2s2c_crc32c_fn c2s2c_crc32c_hardware(void)
 {
     return crc32c_sse42;
 }

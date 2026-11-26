@@ -1,6 +1,6 @@
-"""Low-level ctypes description of the Duplex C API (SPDX-License-Identifier: MIT).
+"""Low-level ctypes description of the C2S2C C API (SPDX-License-Identifier: MIT).
 
-This file tells Python what the functions and structures of libduplex look like,
+This file tells Python what the functions and structures of libc2s2c look like,
 and loads the shared library. Everything user-facing is in __init__.py.
 """
 import ctypes
@@ -13,11 +13,11 @@ EXPECTED_ABI = (2, 0)  # minimum minor version: later minors only add functions
 
 
 def _candidates():
-    """Where to look for the library: DUPLEX_LIBRARY first, then next to the package and Build/."""
-    env = os.environ.get("DUPLEX_LIBRARY")
+    """Where to look for the library: C2S2C_LIBRARY first, then next to the package and Build/."""
+    env = os.environ.get("C2S2C_LIBRARY")
     if env:
         yield Path(env)
-    name = {"darwin": "libduplex.dylib", "win32": "duplex.dll"}.get(sys.platform, "libduplex.so")
+    name = {"darwin": "libc2s2c.dylib", "win32": "c2s2c.dll"}.get(sys.platform, "libc2s2c.so")
     here = Path(__file__).resolve().parent
     yield here / name
     root = here.parents[2]  # repository root when run from a checkout
@@ -26,19 +26,19 @@ def _candidates():
 
 
 def load():
-    """Loads libduplex and checks that its interface version is compatible."""
+    """Loads libc2s2c and checks that its interface version is compatible."""
     for path in _candidates():
         if path.exists():
             lib = ctypes.CDLL(str(path))
             break
     else:
-        raise OSError("libduplex not found: set DUPLEX_LIBRARY to its path")
-    version = lib.dx_abi_version
+        raise OSError("libc2s2c not found: set C2S2C_LIBRARY to its path")
+    version = lib.c2s2c_abi_version
     version.restype = ctypes.c_uint32
     v = version()
     major, minor = v >> 16, (v >> 8) & 0xFF
     if major != EXPECTED_ABI[0] or minor < EXPECTED_ABI[1]:
-        raise OSError(f"libduplex ABI {major}.{minor} is not compatible with this binding "
+        raise OSError(f"libc2s2c ABI {major}.{minor} is not compatible with this binding "
                       f"(needs {EXPECTED_ABI[0]}.{EXPECTED_ABI[1]}+)")
     return lib
 
@@ -76,17 +76,17 @@ def declare(lib):
         fn.restype, fn.argtypes = restype, list(argtypes)
 
     c_int, u16, u32 = ctypes.c_int, ctypes.c_uint16, ctypes.c_uint32
-    sig("dx_strerror", ctypes.c_char_p, c_int)
-    sig("dx_config_default", None, ctypes.POINTER(Config))
-    sig("dx_create", Ctx, ctypes.POINTER(Config))
-    sig("dx_destroy", None, Ctx)
-    sig("dx_listen", c_int, Ctx, ctypes.c_char_p, u16)
-    sig("dx_listen_port", c_int, Ctx)
-    sig("dx_connect", c_int, Ctx, ctypes.c_char_p, u16, ctypes.POINTER(u32))
-    sig("dx_poll", c_int, Ctx, PacketPtr, c_int, c_int)
-    sig("dx_release", None, Ctx, c_int)
-    sig("dx_send", c_int, Ctx, u32, u16, ctypes.c_char_p, u32)
-    sig("dx_close", c_int, Ctx, u32)
-    sig("dx_send_batch", c_int, Ctx, ctypes.POINTER(Outgoing), c_int)
-    sig("dx_flush", c_int, Ctx)
-    sig("dx_payload_validate", c_int, u16, ctypes.c_char_p, u32)
+    sig("c2s2c_strerror", ctypes.c_char_p, c_int)
+    sig("c2s2c_config_default", None, ctypes.POINTER(Config))
+    sig("c2s2c_create", Ctx, ctypes.POINTER(Config))
+    sig("c2s2c_destroy", None, Ctx)
+    sig("c2s2c_listen", c_int, Ctx, ctypes.c_char_p, u16)
+    sig("c2s2c_listen_port", c_int, Ctx)
+    sig("c2s2c_connect", c_int, Ctx, ctypes.c_char_p, u16, ctypes.POINTER(u32))
+    sig("c2s2c_poll", c_int, Ctx, PacketPtr, c_int, c_int)
+    sig("c2s2c_release", None, Ctx, c_int)
+    sig("c2s2c_send", c_int, Ctx, u32, u16, ctypes.c_char_p, u32)
+    sig("c2s2c_close", c_int, Ctx, u32)
+    sig("c2s2c_send_batch", c_int, Ctx, ctypes.POINTER(Outgoing), c_int)
+    sig("c2s2c_flush", c_int, Ctx)
+    sig("c2s2c_payload_validate", c_int, u16, ctypes.c_char_p, u32)

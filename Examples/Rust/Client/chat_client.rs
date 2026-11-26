@@ -3,14 +3,14 @@
 //!
 //! Usage: chat_client_rust <port> <nickname> <message>...
 //! Logs in, sends each message, prints the broadcasts it receives until its own messages came back.
-use duplex::registry::*;
-use duplex::{Context, Writer};
+use c2s2c::registry::*;
+use c2s2c::{Context, Writer};
 use std::cell::Cell;
 use std::io::Write;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-fn main() -> duplex::Result<()> {
+fn main() -> c2s2c::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
         eprintln!("usage: chat_client_rust <port> <nickname> <message>...");

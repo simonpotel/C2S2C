@@ -1,9 +1,9 @@
 // test_node.ts - tests of the Node binding: errors, codec, release (detached buffers), handlers, hooks.
 // SPDX-License-Identifier: MIT
-// Run: node --experimental-strip-types --test test_node.ts   (DUPLEX_ADDON points at duplex.node)
+// Run: node --experimental-strip-types --test test_node.ts   (C2S2C_ADDON points at c2s2c.node)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Context, DuplexError, decode, encode } from "../../../Bindings/Node/Source/index.ts";
+import { Context, C2S2CError, decode, encode } from "../../../Bindings/Node/Source/index.ts";
 import { ERROR_MESSAGES } from "../../../Bindings/Node/Source/codec.ts";
 import { createRequire } from "node:module";
 import * as reg from "../../../Generated/TypeScript/registry.ts";
@@ -28,9 +28,9 @@ function pair(settings = {}) {
 test("errors carry the library code and message", () => {
   const ctx = new Context();
   assert.throws(() => ctx.send(12345, reg.PING, encode(reg.PING, 1)), (e: any) => {
-    return e instanceof DuplexError && e.code === -20 && e.message === "invalid connection";
+    return e instanceof C2S2CError && e.code === -20 && e.message === "invalid connection";
   });
-  assert.throws(() => new Context({ rxRingBytes: 100 }), /dx_create failed/); // ring smaller than two packets
+  assert.throws(() => new Context({ rxRingBytes: 100 }), /c2s2c_create failed/); // ring smaller than two packets
   ctx.destroy();
 });
 
@@ -41,7 +41,7 @@ test("codec round trips and matches the wire format", () => {
   assert.deepEqual([...encode(reg.PING, 0x01020304)], [4, 3, 2, 1]); // little-endian
   assert.deepEqual([...encode(reg.LOGIN, "hi")], [2, 0, 0x68, 0x69]);
   assert.throws(() => encode(reg.PING), TypeError); // wrong field count
-  assert.throws(() => encode(0x1234), DuplexError); // unknown packet
+  assert.throws(() => encode(0x1234), C2S2CError); // unknown packet
   assert.throws(() => decode(reg.LOGIN, new Uint8Array([2, 0, 0xc0, 0x80]))); // invalid UTF-8
 });
 
@@ -125,7 +125,7 @@ test("disconnect reason reaches the hook", () => {
 
 test("the error messages of the pure codec match the C library", () => {
   // codec.ts repeats the messages so browsers can use it; this test catches any drift.
-  const native = createRequire(import.meta.url)(process.env.DUPLEX_ADDON as string);
+  const native = createRequire(import.meta.url)(process.env.C2S2C_ADDON as string);
   for (const code of Object.keys(ERROR_MESSAGES).map(Number)) {
     assert.equal(ERROR_MESSAGES[code], native.strerror(code), `code ${code}`);
   }

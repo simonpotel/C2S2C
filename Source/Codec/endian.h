@@ -1,7 +1,7 @@
 /* endian.h - the only place where wire integers are read or written (little-endian).
  * SPDX-License-Identifier: MIT */
-#ifndef DX_ENDIAN_H
-#define DX_ENDIAN_H
+#ifndef C2S2C_ENDIAN_H
+#define C2S2C_ENDIAN_H
 
 #include <stdint.h>
 
@@ -15,32 +15,32 @@
  */
 
 /* Reads 2 bytes at p as a little-endian integer. Caller guarantees p[0..1] is readable. */
-static inline uint16_t dx_rd16(const uint8_t* p)
+static inline uint16_t c2s2c_rd16(const uint8_t* p)
 {
     return (uint16_t)(p[0] | (p[1] << 8));
 }
 
 /* Reads 4 bytes at p as a little-endian integer. Caller guarantees p[0..3] is readable. */
-static inline uint32_t dx_rd32(const uint8_t* p)
+static inline uint32_t c2s2c_rd32(const uint8_t* p)
 {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
 /* Reads 8 bytes at p as a little-endian integer. Caller guarantees p[0..7] is readable. */
-static inline uint64_t dx_rd64(const uint8_t* p)
+static inline uint64_t c2s2c_rd64(const uint8_t* p)
 {
-    return (uint64_t)dx_rd32(p) | ((uint64_t)dx_rd32(p + 4) << 32);
+    return (uint64_t)c2s2c_rd32(p) | ((uint64_t)c2s2c_rd32(p + 4) << 32);
 }
 
 /* Writes v as 2 little-endian bytes. Caller guarantees p[0..1] is writable. */
-static inline void dx_wr16(uint8_t* p, uint16_t v)
+static inline void c2s2c_wr16(uint8_t* p, uint16_t v)
 {
     p[0] = (uint8_t)v;
     p[1] = (uint8_t)(v >> 8);
 }
 
 /* Writes v as 4 little-endian bytes. Caller guarantees p[0..3] is writable. */
-static inline void dx_wr32(uint8_t* p, uint32_t v)
+static inline void c2s2c_wr32(uint8_t* p, uint32_t v)
 {
     p[0] = (uint8_t)v;
     p[1] = (uint8_t)(v >> 8);
@@ -49,10 +49,10 @@ static inline void dx_wr32(uint8_t* p, uint32_t v)
 }
 
 /* Writes v as 8 little-endian bytes. Caller guarantees p[0..7] is writable. */
-static inline void dx_wr64(uint8_t* p, uint64_t v)
+static inline void c2s2c_wr64(uint8_t* p, uint64_t v)
 {
-    dx_wr32(p, (uint32_t)v);
-    dx_wr32(p + 4, (uint32_t)(v >> 32));
+    c2s2c_wr32(p, (uint32_t)v);
+    c2s2c_wr32(p + 4, (uint32_t)(v >> 32));
 }
 
 #endif

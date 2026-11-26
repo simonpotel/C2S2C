@@ -1,7 +1,7 @@
 /* raw_peer.h - a plain POSIX socket peer that writes exactly the bytes a test chooses.
  * SPDX-License-Identifier: MIT */
-#ifndef DX_TEST_RAW_PEER_H
-#define DX_TEST_RAW_PEER_H
+#ifndef C2S2C_TEST_RAW_PEER_H
+#define C2S2C_TEST_RAW_PEER_H
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -38,17 +38,17 @@ static inline void raw_header(uint8_t* out, unsigned magic, unsigned ver, unsign
 /* A valid CTOS ping frame (header + u32 nonce) with the given sequence number. */
 static inline size_t ping_frame(uint8_t* out, uint32_t nonce, uint32_t seq)
 {
-    raw_header(out, DX_MAGIC, 1, 0, DX_PKT_PING, 4, seq);
+    raw_header(out, C2S2C_MAGIC, 1, 0, C2S2C_PKT_PING, 4, seq);
     put32(out + 14, nonce);
     return 18;
 }
 
-static inline int raw_connect(dx_ctx* server)
+static inline int raw_connect(c2s2c_ctx* server)
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a = {0};
     a.sin_family = AF_INET;
-    a.sin_port = htons((uint16_t)dx_listen_port(server));
+    a.sin_port = htons((uint16_t)c2s2c_listen_port(server));
     inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
     if (connect(fd, (struct sockaddr*)&a, sizeof a) != 0) {
         perror("raw connect");

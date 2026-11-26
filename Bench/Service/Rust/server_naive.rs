@@ -1,5 +1,5 @@
-//! Benchmark service written from scratch in Rust (no Duplex, std only): what you write when you
-//! recode the protocol yourself. One thread per connection, the same checks as the Duplex library
+//! Benchmark service written from scratch in Rust (no C2S2C, std only): what you write when you
+//! recode the protocol yourself. One thread per connection, the same checks as the C2S2C library
 //! for this packet, and connections idle for one second are dropped.
 //! SPDX-License-Identifier: MIT
 use std::io::{Read, Write};

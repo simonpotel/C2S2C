@@ -5,14 +5,14 @@
 #include <string>
 
 #include "../../check.h"
-#include "dx_packets.hpp"
-#include <duplex.hpp>
+#include "c2s2c_packets.hpp"
+#include <c2s2c.hpp>
 
 namespace
 {
 
-using namespace duplex;
-namespace pkt = duplex::pkt;
+using namespace c2s2c;
+namespace pkt = c2s2c::pkt;
 
 template <class F> void spin(Context& a, Context& b, F done)
 {
@@ -23,10 +23,10 @@ template <class F> void spin(Context& a, Context& b, F done)
     }
 }
 
-dx_config small_config(uint32_t queue = 0, uint32_t max_payload = 0)
+c2s2c_config small_config(uint32_t queue = 0, uint32_t max_payload = 0)
 {
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     cfg.max_conns = 4;
     if (queue) cfg.rx_queue = queue;
     if (max_payload) cfg.max_payload = max_payload;
@@ -43,16 +43,16 @@ void test_errors()
         ctx.send(12345, pkt::PING, nullptr, 0);
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_BAD_CONN && std::string(e.what()) == "invalid connection");
+        CHECK(e.code() == C2S2C_ERR_BAD_CONN && std::string(e.what()) == "invalid connection");
     }
-    dx_config bad;
-    dx_config_default(&bad);
+    c2s2c_config bad;
+    c2s2c_config_default(&bad);
     bad.rx_ring_bytes = 100; // smaller than two maximal packets: refused
     try {
         Context c(&bad);
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_NO_MEMORY);
+        CHECK(e.code() == C2S2C_ERR_NO_MEMORY);
     }
 }
 
@@ -68,7 +68,7 @@ void test_codec()
         r.u8();
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_TRUNCATED);
+        CHECK(e.code() == C2S2C_ERR_TRUNCATED);
     }
     uint8_t tiny[2];
     Writer small(tiny, sizeof tiny);
@@ -77,7 +77,7 @@ void test_codec()
         small.size();
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_OVERFLOW);
+        CHECK(e.code() == C2S2C_ERR_OVERFLOW);
     }
     Writer bad(buf, sizeof buf);
     bad.string(std::string_view("\xC0\x80", 2));
@@ -85,7 +85,7 @@ void test_codec()
         bad.size();
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_BAD_UTF8);
+        CHECK(e.code() == C2S2C_ERR_BAD_UTF8);
     }
 }
 
@@ -161,7 +161,7 @@ void test_handlers_and_hooks()
         client.send(conn, pkt::LOGIN, b, n); // vetoed by the before_send hook
         CHECK(false);
     } catch (const Error& e) {
-        CHECK(e.code() == DX_ERR_REJECTED);
+        CHECK(e.code() == C2S2C_ERR_REJECTED);
     }
     spin(server, client, [&] { return pongs == 1 && dropped == 1; });
     CHECK(pings == 1 && pongs == 1 && dropped == 1 && rejected == 1);
@@ -184,5 +184,5 @@ int main()
     test_codec();
     test_batch_releases();
     test_handlers_and_hooks();
-    return dx_test_done();
+    return c2s2c_test_done();
 }

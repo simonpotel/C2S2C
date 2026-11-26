@@ -1,10 +1,10 @@
-/* binding.c - Node.js native addon (N-API): the thin layer between JavaScript and libduplex.
+/* binding.c - Node.js native addon (N-API): the thin layer between JavaScript and libc2s2c.
  * SPDX-License-Identifier: MIT */
 #include <node_api.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "Duplex/duplex.h"
+#include "C2S2C/c2s2c.h"
 
 /*
  * This file exposes the C functions to JavaScript with the smallest possible
@@ -35,7 +35,7 @@ static int arg_int(napi_env env, napi_value v, int32_t* out)
     return napi_get_value_int32(env, v, out) == napi_ok;
 }
 
-static dx_ctx* arg_ctx(napi_env env, napi_value v)
+static c2s2c_ctx* arg_ctx(napi_env env, napi_value v)
 {
     void* ptr = NULL;
     if (napi_get_value_external(env, v, &ptr) != napi_ok) return NULL;
@@ -60,15 +60,15 @@ static napi_value js_create(napi_env env, napi_callback_info info)
     size_t argc = 1;
     napi_value argv[1];
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-    dx_config cfg;
-    dx_config_default(&cfg);
+    c2s2c_config cfg;
+    c2s2c_config_default(&cfg);
     if (argc > 0) {
         cfg.max_conns =
             opt_u32(env, argv[0], "maxConns") ? opt_u32(env, argv[0], "maxConns") : cfg.max_conns;
         uint32_t payload = opt_u32(env, argv[0], "maxPayload");
         if (payload) {
             cfg.max_payload = payload;
-            cfg.tx_bytes = 4 * (payload + DX_HEADER_SIZE);
+            cfg.tx_bytes = 4 * (payload + C2S2C_HEADER_SIZE);
         }
         if (opt_u32(env, argv[0], "rxQueue")) cfg.rx_queue = opt_u32(env, argv[0], "rxQueue");
         if (opt_u32(env, argv[0], "idleTimeoutMs"))
@@ -76,9 +76,9 @@ static napi_value js_create(napi_env env, napi_callback_info info)
         if (opt_u32(env, argv[0], "rxRingBytes"))
             cfg.rx_ring_bytes = opt_u32(env, argv[0], "rxRingBytes");
     }
-    dx_ctx* ctx = dx_create(&cfg);
+    c2s2c_ctx* ctx = c2s2c_create(&cfg);
     if (!ctx) {
-        napi_throw_error(env, NULL, "dx_create failed (invalid settings or out of memory)");
+        napi_throw_error(env, NULL, "c2s2c_create failed (invalid settings or out of memory)");
         return NULL;
     }
     napi_value ext;
@@ -91,7 +91,7 @@ static napi_value js_destroy(napi_env env, napi_callback_info info)
     size_t argc = 1;
     napi_value argv[1];
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-    dx_destroy(arg_ctx(env, argv[0]));
+    c2s2c_destroy(arg_ctx(env, argv[0]));
     return NULL;
 }
 
@@ -106,11 +106,11 @@ static napi_value addr_call(napi_env env, napi_callback_info info, int connect)
     int32_t port = 0;
     if (argc < 3 || napi_get_value_string_utf8(env, argv[1], addr, sizeof addr, &n) != napi_ok ||
         !arg_int(env, argv[2], &port))
-        return make_int(env, DX_ERR_INVALID_ARG);
-    dx_ctx* ctx = arg_ctx(env, argv[0]);
-    if (!connect) return make_int(env, dx_listen(ctx, addr, (uint16_t)port));
+        return make_int(env, C2S2C_ERR_INVALID_ARG);
+    c2s2c_ctx* ctx = arg_ctx(env, argv[0]);
+    if (!connect) return make_int(env, c2s2c_listen(ctx, addr, (uint16_t)port));
     uint32_t conn = 0;
-    int rc = dx_connect(ctx, addr, (uint16_t)port, &conn);
+    int rc = c2s2c_connect(ctx, addr, (uint16_t)port, &conn);
     napi_value out;
     if (rc < 0) return make_int(env, rc);
     CALL(env, napi_create_uint32(env, conn, &out)); /* handles are never negative numbers */
@@ -132,7 +132,7 @@ static napi_value js_port(napi_env env, napi_callback_info info)
     size_t argc = 1;
     napi_value argv[1];
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-    return make_int(env, dx_listen_port(arg_ctx(env, argv[0])));
+    return make_int(env, c2s2c_listen_port(arg_ctx(env, argv[0])));
 }
 
 /* close(ctx, conn) */
@@ -143,7 +143,7 @@ static napi_value js_close(napi_env env, napi_callback_info info)
     uint32_t conn = 0;
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
     napi_get_value_uint32(env, argv[1], &conn);
-    return make_int(env, dx_close(arg_ctx(env, argv[0]), conn));
+    return make_int(env, c2s2c_close(arg_ctx(env, argv[0]), conn));
 }
 
 /* send(ctx, conn, packetId, Uint8Array) -> result code */
@@ -158,8 +158,9 @@ static napi_value js_send(napi_env env, napi_callback_info info)
     void* data = NULL;
     size_t len = 0;
     if (napi_get_typedarray_info(env, argv[3], NULL, &len, &data, NULL, NULL) != napi_ok)
-        return make_int(env, DX_ERR_INVALID_ARG);
-    return make_int(env, dx_send(arg_ctx(env, argv[0]), conn, (uint16_t)id, data, (uint32_t)len));
+        return make_int(env, C2S2C_ERR_INVALID_ARG);
+    return make_int(env,
+                    c2s2c_send(arg_ctx(env, argv[0]), conn, (uint16_t)id, data, (uint32_t)len));
 }
 
 /* sendBatch(ctx, meta: Uint32Array [conn, id, length] * n, payloads: Uint8Array) -> how many
@@ -174,15 +175,16 @@ static napi_value js_send_batch(napi_env env, napi_callback_info info)
     size_t meta_len = 0, data_len = 0;
     if (napi_get_typedarray_info(env, argv[1], NULL, &meta_len, &meta, NULL, NULL) != napi_ok ||
         napi_get_typedarray_info(env, argv[2], NULL, &data_len, &data, NULL, NULL) != napi_ok)
-        return make_int(env, DX_ERR_INVALID_ARG);
-    dx_ctx* ctx = arg_ctx(env, argv[0]);
+        return make_int(env, C2S2C_ERR_INVALID_ARG);
+    c2s2c_ctx* ctx = arg_ctx(env, argv[0]);
     const uint32_t* m = meta;
     size_t n = meta_len / 3, offset = 0;
     for (size_t i = 0; i < n; i++) {
         uint32_t len = m[3 * i + 2];
-        if (offset + len > data_len) return make_int(env, i ? (int)i : DX_ERR_INVALID_ARG);
-        int rc = dx_send(ctx, m[3 * i], (uint16_t)m[3 * i + 1], (const uint8_t*)data + offset, len);
-        if (rc != DX_OK) return make_int(env, i ? (int)i : rc);
+        if (offset + len > data_len) return make_int(env, i ? (int)i : C2S2C_ERR_INVALID_ARG);
+        int rc =
+            c2s2c_send(ctx, m[3 * i], (uint16_t)m[3 * i + 1], (const uint8_t*)data + offset, len);
+        if (rc != C2S2C_OK) return make_int(env, i ? (int)i : rc);
         offset += len;
     }
     return make_int(env, (int)n);
@@ -193,7 +195,7 @@ static napi_value js_flush(napi_env env, napi_callback_info info)
     size_t argc = 1;
     napi_value argv[1];
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
-    return make_int(env, dx_flush(arg_ctx(env, argv[0])));
+    return make_int(env, c2s2c_flush(arg_ctx(env, argv[0])));
 }
 
 /* poll(ctx, timeoutMs, max) -> [meta, payloads] or a negative code.
@@ -209,11 +211,11 @@ static napi_value js_poll(napi_env env, napi_callback_info info)
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
     arg_int(env, argv[1], &timeout);
     arg_int(env, argv[2], &max);
-    if (max < 1 || max > 1024) return make_int(env, DX_ERR_INVALID_ARG);
+    if (max < 1 || max > 1024) return make_int(env, C2S2C_ERR_INVALID_ARG);
 
-    dx_packet pk[1024];
-    dx_ctx* ctx = arg_ctx(env, argv[0]);
-    int n = dx_poll(ctx, pk, max, timeout);
+    c2s2c_packet pk[1024];
+    c2s2c_ctx* ctx = arg_ctx(env, argv[0]);
+    int n = c2s2c_poll(ctx, pk, max, timeout);
     if (n < 0) return make_int(env, n);
 
     size_t total = 0;
@@ -248,7 +250,7 @@ static napi_value js_release(napi_env env, napi_callback_info info)
     int32_t count = 0;
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
     arg_int(env, argv[1], &count);
-    dx_release(arg_ctx(env, argv[0]), count);
+    c2s2c_release(arg_ctx(env, argv[0]), count);
     return NULL;
 }
 
@@ -259,7 +261,7 @@ static napi_value js_strerror(napi_env env, napi_callback_info info)
     int32_t code = 0;
     CALL(env, napi_get_cb_info(env, info, &argc, argv, NULL, NULL));
     arg_int(env, argv[0], &code);
-    CALL(env, napi_create_string_utf8(env, dx_strerror(code), NAPI_AUTO_LENGTH, &out));
+    CALL(env, napi_create_string_utf8(env, c2s2c_strerror(code), NAPI_AUTO_LENGTH, &out));
     return out;
 }
 
@@ -267,7 +269,7 @@ static napi_value js_abi_version(napi_env env, napi_callback_info info)
 {
     (void)info;
     napi_value out;
-    CALL(env, napi_create_uint32(env, dx_abi_version(), &out));
+    CALL(env, napi_create_uint32(env, c2s2c_abi_version(), &out));
     return out;
 }
 

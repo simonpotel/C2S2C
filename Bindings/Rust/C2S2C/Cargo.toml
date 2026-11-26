@@ -1,8 +1,8 @@
 [package]
-name = "duplex"
+name = "c2s2c"
 version = "0.1.0"
 edition = "2021"
-description = "Safe Rust binding of the Duplex packet library"
+description = "Safe Rust binding of the C2S2C packet library"
 license = "MIT"
 build = "build.rs"
 
@@ -10,7 +10,7 @@ build = "build.rs"
 path = "Source/lib.rs"
 
 [dependencies]
-duplex-sys = { path = "../DuplexSys" }
+c2s2c-sys = { path = "../C2S2CSys" }
 
 [[bin]]
 name = "chat_server_rust"
@@ -29,8 +29,8 @@ name = "bench_ffi_rust"
 path = "../../../Bench/Ffi/bench_ffi.rs"
 
 [[bin]]
-name = "bench_service_duplex"
-path = "../../../Bench/Service/Rust/server_duplex.rs"
+name = "bench_service_c2s2c"
+path = "../../../Bench/Service/Rust/server_c2s2c.rs"
 
 [[bin]]
 name = "bench_service_naive"

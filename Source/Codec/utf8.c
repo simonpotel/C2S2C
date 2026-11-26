@@ -11,7 +11,7 @@
  * The rules are encoded as "how many continuation bytes follow" and "allowed range of the
  * FIRST continuation byte" (the other continuations are always 0x80..0xBF).
  */
-int dx_utf8_valid(const uint8_t* s, size_t n)
+int c2s2c_utf8_valid(const uint8_t* s, size_t n)
 {
     size_t i = 0;
     while (i < n) {

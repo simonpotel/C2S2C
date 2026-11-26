@@ -36,7 +36,7 @@ typedef struct reg {
     uint32_t gen;
 } reg;
 
-struct dx_io {
+struct c2s2c_io {
     int ring_fd;
     uint32_t sq_entries;
     void *sq_ptr, *cq_ptr;
@@ -60,7 +60,7 @@ static long uring_enter(int fd, unsigned to_submit, unsigned min_complete, unsig
     return syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, arg, argsz);
 }
 
-static void release_all(dx_io* io, const dx_alloc* a)
+static void release_all(c2s2c_io* io, const c2s2c_alloc* a)
 {
     if (io->sqes && io->sqes != MAP_FAILED) munmap(io->sqes, io->sqes_size);
     if (io->cq_ptr && io->cq_ptr != io->sq_ptr) munmap(io->cq_ptr, io->cq_size);
@@ -72,9 +72,9 @@ static void release_all(dx_io* io, const dx_alloc* a)
     a->release(io, a->user);
 }
 
-static dx_io* uring_open(const dx_alloc* a, uint32_t max_fds)
+static c2s2c_io* uring_open(const c2s2c_alloc* a, uint32_t max_fds)
 {
-    dx_io* io = a->alloc(sizeof *io, a->user);
+    c2s2c_io* io = a->alloc(sizeof *io, a->user);
     if (!io) return NULL;
     memset(io, 0, sizeof *io);
     io->ring_fd = -1;
@@ -136,13 +136,13 @@ fail:
     return NULL;
 }
 
-static void uring_close(dx_io* io, const dx_alloc* a)
+static void uring_close(c2s2c_io* io, const c2s2c_alloc* a)
 {
     release_all(io, a);
 }
 
 /* Gives the queued requests to the kernel. */
-static void submit(dx_io* io)
+static void submit(c2s2c_io* io)
 {
     if (io->pending) {
         (void)uring_enter(io->ring_fd, io->pending, 0, 0, NULL, 0);
@@ -151,7 +151,7 @@ static void submit(dx_io* io)
 }
 
 /* Next free request slot in the submission queue (submitting first if the queue is full). */
-static struct io_uring_sqe* next_sqe(dx_io* io)
+static struct io_uring_sqe* next_sqe(c2s2c_io* io)
 {
     uint32_t tail = *io->sq_tail;
     if (tail - __atomic_load_n(io->sq_head, __ATOMIC_ACQUIRE) >= io->sq_entries) submit(io);
@@ -170,19 +170,19 @@ static uint64_t user_data(uint32_t slot, uint32_t gen)
 }
 
 /* Asks the kernel to report readiness of one registered socket (once). */
-static void arm(dx_io* io, uint32_t slot)
+static void arm(c2s2c_io* io, uint32_t slot)
 {
     reg* r = &io->regs[slot];
     struct io_uring_sqe* sqe = next_sqe(io);
     sqe->opcode = IORING_OP_POLL_ADD;
     sqe->fd = r->fd;
     /* No events requested still reports hang-up and errors, like poll(2) does. */
-    sqe->poll_events =
-        (uint16_t)(((r->events & DX_IO_R) ? POLLIN : 0) | ((r->events & DX_IO_W) ? POLLOUT : 0));
+    sqe->poll_events = (uint16_t)(((r->events & C2S2C_IO_R) ? POLLIN : 0) |
+                                  ((r->events & C2S2C_IO_W) ? POLLOUT : 0));
     sqe->user_data = user_data(slot, r->gen);
 }
 
-static void cancel(dx_io* io, uint32_t slot)
+static void cancel(c2s2c_io* io, uint32_t slot)
 {
     struct io_uring_sqe* sqe = next_sqe(io);
     sqe->opcode = IORING_OP_POLL_REMOVE;
@@ -190,10 +190,10 @@ static void cancel(dx_io* io, uint32_t slot)
     sqe->user_data = NO_REPLY;
 }
 
-static int uring_add(dx_io* io, int fd, void* tag, uint8_t events)
+static int uring_add(c2s2c_io* io, int fd, void* tag, uint8_t events)
 {
     if (fd < 0 || (uint32_t)fd >= io->fd_cap || io->slot_of_fd[fd] >= 0 || io->free_count == 0)
-        return DX_ERR_LIMIT;
+        return C2S2C_ERR_LIMIT;
     uint32_t slot = io->free_slots[--io->free_count];
     reg* r = &io->regs[slot];
     r->tag = tag;
@@ -203,12 +203,13 @@ static int uring_add(dx_io* io, int fd, void* tag, uint8_t events)
     r->gen++;
     io->slot_of_fd[fd] = (int32_t)slot;
     arm(io, slot);
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-static int uring_mod(dx_io* io, int fd, void* tag, uint8_t events)
+static int uring_mod(c2s2c_io* io, int fd, void* tag, uint8_t events)
 {
-    if (fd < 0 || (uint32_t)fd >= io->fd_cap || io->slot_of_fd[fd] < 0) return DX_ERR_INVALID_ARG;
+    if (fd < 0 || (uint32_t)fd >= io->fd_cap || io->slot_of_fd[fd] < 0)
+        return C2S2C_ERR_INVALID_ARG;
     uint32_t slot = (uint32_t)io->slot_of_fd[fd];
     reg* r = &io->regs[slot];
     cancel(io, slot); /* drop the outstanding request, then ask again with the new interest */
@@ -216,21 +217,22 @@ static int uring_mod(dx_io* io, int fd, void* tag, uint8_t events)
     r->tag = tag;
     r->events = events;
     arm(io, slot);
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-static int uring_del(dx_io* io, int fd)
+static int uring_del(c2s2c_io* io, int fd)
 {
-    if (fd < 0 || (uint32_t)fd >= io->fd_cap || io->slot_of_fd[fd] < 0) return DX_ERR_INVALID_ARG;
+    if (fd < 0 || (uint32_t)fd >= io->fd_cap || io->slot_of_fd[fd] < 0)
+        return C2S2C_ERR_INVALID_ARG;
     uint32_t slot = (uint32_t)io->slot_of_fd[fd];
     cancel(io, slot);
     io->regs[slot].active = 0;
     io->slot_of_fd[fd] = -1;
     io->free_slots[io->free_count++] = slot;
-    return DX_OK;
+    return C2S2C_OK;
 }
 
-static int uring_wait(dx_io* io, dx_io_event* out, int max, int timeout_ms)
+static int uring_wait(c2s2c_io* io, c2s2c_io_event* out, int max, int timeout_ms)
 {
     /* Give pending requests to the kernel and, if nothing is complete yet, wait for one. */
     int have = __atomic_load_n(io->cq_tail, __ATOMIC_ACQUIRE) != *io->cq_head;
@@ -262,10 +264,10 @@ static int uring_wait(dx_io* io, dx_io_event* out, int max, int timeout_ms)
         if (cqe.res == -ECANCELED) continue;
         unsigned revents = cqe.res >= 0 ? (unsigned)cqe.res : (unsigned)POLLERR;
         out[got].tag = r->tag;
-        out[got].events =
-            (uint8_t)(((revents & POLLIN) ? DX_IO_R : 0) | ((revents & POLLOUT) ? DX_IO_W : 0));
+        out[got].events = (uint8_t)(((revents & POLLIN) ? C2S2C_IO_R : 0) |
+                                    ((revents & POLLOUT) ? C2S2C_IO_W : 0));
         out[got].error = (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0;
-        if (out[got].error) out[got].events |= DX_IO_R; /* a read reveals EOF or the error */
+        if (out[got].error) out[got].events |= C2S2C_IO_R; /* a read reveals EOF or the error */
         got++;
         arm(io, slot); /* the request answered once: ask again (level-triggered behaviour) */
     }
@@ -273,6 +275,6 @@ static int uring_wait(dx_io* io, dx_io_event* out, int max, int timeout_ms)
     return got;
 }
 
-const dx_io_ops dx_io_uring = {"io_uring", uring_open, uring_close, uring_add,
-                               uring_mod,  uring_del,  uring_wait};
+const c2s2c_io_ops c2s2c_io_uring = {"io_uring", uring_open, uring_close, uring_add,
+                                     uring_mod,  uring_del,  uring_wait};
 #endif

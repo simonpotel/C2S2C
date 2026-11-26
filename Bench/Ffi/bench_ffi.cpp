@@ -3,22 +3,22 @@
 #include <chrono>
 #include <cstdio>
 
-#include "dx_packets.hpp"
-#include <duplex.hpp>
+#include "c2s2c_packets.hpp"
+#include <c2s2c.hpp>
 
 int main()
 {
-    namespace pkt = duplex::pkt;
-    duplex::Context server, client;
+    namespace pkt = c2s2c::pkt;
+    c2s2c::Context server, client;
     server.listen("127.0.0.1");
     uint32_t conn = client.connect("127.0.0.1", static_cast<uint16_t>(server.port()));
-    server.on_packet(pkt::PING, [](duplex::Context& c, const duplex::Packet& p) {
+    server.on_packet(pkt::PING, [](c2s2c::Context& c, const c2s2c::Packet& p) {
         c.send(p.conn(), pkt::PONG, p.data(), p.size());
     });
     uint64_t pongs = 0;
-    client.on_packet(pkt::PONG, [&](duplex::Context&, const duplex::Packet&) { pongs++; });
+    client.on_packet(pkt::PONG, [&](c2s2c::Context&, const c2s2c::Packet&) { pongs++; });
     uint8_t payload[4];
-    duplex::Writer(payload, 4).u32(1);
+    c2s2c::Writer(payload, 4).u32(1);
     uint64_t inflight = 0;
     auto t0 = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - t0 < std::chrono::seconds(1)) {

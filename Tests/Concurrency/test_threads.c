@@ -21,18 +21,18 @@ static void* worker(void* arg)
 {
     result* r = arg;
     side S = {0}, C = {0};
-    S.ctx = dx_create(NULL);
-    C.ctx = dx_create(NULL);
+    S.ctx = c2s2c_create(NULL);
+    C.ctx = c2s2c_create(NULL);
     if (!S.ctx || !C.ctx) return NULL;
     S.reply = 1;
-    dx_listen(S.ctx, "127.0.0.1", 0);
+    c2s2c_listen(S.ctx, "127.0.0.1", 0);
     uint32_t conn;
-    dx_connect(C.ctx, "127.0.0.1", (uint16_t)dx_listen_port(S.ctx), &conn);
+    c2s2c_connect(C.ctx, "127.0.0.1", (uint16_t)c2s2c_listen_port(S.ctx), &conn);
     WAIT_UNTIL(S, C, S.connected == 1 && C.connected == 1);
 
     for (uint32_t i = 0; i < ROUNDS; i++) {
         uint8_t b[4] = {(uint8_t)i, (uint8_t)(i >> 8), 0, 0};
-        while (dx_send(C.ctx, conn, DX_PKT_PING, b, 4) == DX_ERR_WOULD_BLOCK) {
+        while (c2s2c_send(C.ctx, conn, C2S2C_PKT_PING, b, 4) == C2S2C_ERR_WOULD_BLOCK) {
             pump_side(&S, 0);
             pump_side(&C, 0);
         }
@@ -41,8 +41,8 @@ static void* worker(void* arg)
     }
     WAIT_UNTIL(S, C, C.pongs == ROUNDS);
     r->ok = C.pongs == ROUNDS && S.bad == 0 && S.disconnected == 0;
-    dx_destroy(S.ctx);
-    dx_destroy(C.ctx);
+    c2s2c_destroy(S.ctx);
+    c2s2c_destroy(C.ctx);
     return NULL;
 }
 
@@ -56,5 +56,5 @@ int main(void)
         pthread_join(t[i], NULL);
         CHECK(res[i].ok);
     }
-    return dx_test_done();
+    return c2s2c_test_done();
 }

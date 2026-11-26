@@ -1,61 +1,61 @@
 /* version.c - version and error-string accessors.
  * SPDX-License-Identifier: MIT */
-#include "Duplex/duplex.h"
+#include "C2S2C/c2s2c.h"
 
 /*
  * Bindings in other languages cannot see C macros at runtime, so errors are exposed as
  * static strings through a function. Returning string literals means no allocation and no
  * ownership question: the pointer is valid forever and safe to share between threads.
- * Adding a DX_ERR_* code requires adding its message here (the unit test enforces it).
+ * Adding a C2S2C_ERR_* code requires adding its message here (the unit test enforces it).
  */
-const char* dx_strerror(int err)
+const char* c2s2c_strerror(int err)
 {
     switch (err) {
-    case DX_OK:
+    case C2S2C_OK:
         return "success";
-    case DX_ERR_INVALID_ARG:
+    case C2S2C_ERR_INVALID_ARG:
         return "invalid argument";
-    case DX_ERR_TRUNCATED:
+    case C2S2C_ERR_TRUNCATED:
         return "truncated input";
-    case DX_ERR_BAD_MAGIC:
+    case C2S2C_ERR_BAD_MAGIC:
         return "bad magic";
-    case DX_ERR_BAD_VERSION:
+    case C2S2C_ERR_BAD_VERSION:
         return "unsupported protocol version";
-    case DX_ERR_BAD_FLAGS:
+    case C2S2C_ERR_BAD_FLAGS:
         return "reserved flag bits set";
-    case DX_ERR_BAD_ID:
+    case C2S2C_ERR_BAD_ID:
         return "packet id does not match direction";
-    case DX_ERR_TOO_LARGE:
+    case C2S2C_ERR_TOO_LARGE:
         return "payload too large";
-    case DX_ERR_BAD_UTF8:
+    case C2S2C_ERR_BAD_UTF8:
         return "invalid UTF-8";
-    case DX_ERR_BAD_VALUE:
+    case C2S2C_ERR_BAD_VALUE:
         return "invalid value for type";
-    case DX_ERR_TRAILING:
+    case C2S2C_ERR_TRAILING:
         return "unexpected trailing bytes";
-    case DX_ERR_BAD_SCHEMA:
+    case C2S2C_ERR_BAD_SCHEMA:
         return "invalid schema";
-    case DX_ERR_OVERFLOW:
+    case C2S2C_ERR_OVERFLOW:
         return "output buffer too small";
-    case DX_ERR_UNKNOWN_ID:
+    case C2S2C_ERR_UNKNOWN_ID:
         return "unknown packet id";
-    case DX_ERR_WOULD_BLOCK:
+    case C2S2C_ERR_WOULD_BLOCK:
         return "send buffer full";
-    case DX_ERR_IO:
+    case C2S2C_ERR_IO:
         return "socket error";
-    case DX_ERR_BAD_SEQUENCE:
+    case C2S2C_ERR_BAD_SEQUENCE:
         return "unexpected sequence number";
-    case DX_ERR_BAD_DIRECTION:
+    case C2S2C_ERR_BAD_DIRECTION:
         return "packet travels the wrong direction";
-    case DX_ERR_NO_MEMORY:
+    case C2S2C_ERR_NO_MEMORY:
         return "out of memory";
-    case DX_ERR_LIMIT:
+    case C2S2C_ERR_LIMIT:
         return "limit reached";
-    case DX_ERR_BAD_CONN:
+    case C2S2C_ERR_BAD_CONN:
         return "invalid connection";
-    case DX_ERR_TIMEOUT:
+    case C2S2C_ERR_TIMEOUT:
         return "connection timed out";
-    case DX_ERR_REJECTED:
+    case C2S2C_ERR_REJECTED:
         return "rejected by a hook";
     default:
         return "unknown error"; /* never NULL, so callers can print it without checking */
@@ -63,10 +63,10 @@ const char* dx_strerror(int err)
 }
 
 /*
- * Lets a binding compare the library it loaded at runtime against the DX_ABI_VERSION it
+ * Lets a binding compare the library it loaded at runtime against the C2S2C_ABI_VERSION it
  * was compiled against, and refuse to run on a mismatch instead of crashing later.
  */
-uint32_t dx_abi_version(void)
+uint32_t c2s2c_abi_version(void)
 {
-    return DX_ABI_VERSION;
+    return C2S2C_ABI_VERSION;
 }

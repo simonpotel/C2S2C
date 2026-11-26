@@ -2,14 +2,14 @@
 // gateway, and the browser-side client code (WebAssembly codec + WebSocket) run for real.
 // SPDX-License-Identifier: MIT
 // "Headless" here means Node's built-in WebSocket stands in for the browser's: the page's own
-// modules are loaded exactly as written. Env: DUPLEX_WASM, DUPLEX_ADDON (the Node addon the chat server uses).
+// modules are loaded exactly as written. Env: C2S2C_WASM, C2S2C_ADDON (the Node addon the chat server uses).
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import { test } from "node:test";
-import { WebClient } from "../../Bindings/Wasm/Source/duplex_web.ts";
-import { loadCodec } from "../../Bindings/Wasm/Source/duplex_wasm.ts";
+import { WebClient } from "../../Bindings/Wasm/Source/c2s2c_web.ts";
+import { loadCodec } from "../../Bindings/Wasm/Source/c2s2c_wasm.ts";
 import * as reg from "../../Generated/TypeScript/registry.ts";
 
 /** Starts a program and resolves with the first line it prints (its port). */
@@ -34,7 +34,7 @@ test("web client chats through the gateway, and the page is served", async (t) =
   // The gateway serves the page and turns its TypeScript into JavaScript (no type syntax left).
   const page = await fetch(`${base}/`);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /Duplex chat/);
+  assert.match(await page.text(), /C2S2C chat/);
   // Follow what a browser would: the page's script, then every module it imports, recursively.
   // Each must exist, be served as JavaScript, and contain no TypeScript syntax.
   const html = await (await fetch(`${base}/`)).text();
@@ -61,11 +61,11 @@ test("web client chats through the gateway, and the page is served", async (t) =
       http.get({ host: "127.0.0.1", port: gatewayPort, path: evil }, (res) => { res.resume(); resolve(res.statusCode ?? 0); }));
     assert.equal(status, 404, evil);
   }
-  const wasm = await fetch(`${base}/duplex_codec.wasm`);
+  const wasm = await fetch(`${base}/c2s2c_codec.wasm`);
   assert.equal(wasm.headers.get("content-type"), "application/wasm");
 
   // A chat session driven by the same client class the page uses.
-  const codec = await loadCodec(fs.readFileSync(process.env.DUPLEX_WASM as string));
+  const codec = await loadCodec(fs.readFileSync(process.env.C2S2C_WASM as string));
   const client = await WebClient.connect(`ws://127.0.0.1:${gatewayPort}/ws`, codec);
   const received: string[] = [];
   let loggedIn = false;

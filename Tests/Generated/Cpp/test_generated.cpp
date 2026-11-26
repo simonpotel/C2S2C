@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 
-#include "dx_packets.hpp"
+#include "c2s2c_packets.hpp"
 
 int main(int argc, char** argv)
 {
@@ -18,14 +18,14 @@ int main(int argc, char** argv)
     std::string id, name, schema;
     while (in >> id >> name >> schema) {
         bool found = false;
-        for (const auto& p : duplex::pkt::all)
+        for (const auto& p : c2s2c::pkt::all)
             if (p.id == std::stoul(id, nullptr, 16) && name == p.name && schema == p.schema)
                 found = true;
         (found ? pass : fail)++;
         lines++;
     }
     // The table must have exactly as many entries as the listing.
-    (lines == sizeof(duplex::pkt::all) / sizeof(duplex::pkt::all[0]) ? pass : fail)++;
+    (lines == sizeof(c2s2c::pkt::all) / sizeof(c2s2c::pkt::all[0]) ? pass : fail)++;
     std::printf("%d passed, %d failed\n", pass, fail);
     return fail != 0;
 }

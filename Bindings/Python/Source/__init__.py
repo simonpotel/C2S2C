@@ -1,9 +1,9 @@
-"""Duplex: Python binding of the Duplex packet library (SPDX-License-Identifier: MIT).
+"""C2S2C: Python binding of the C2S2C packet library (SPDX-License-Identifier: MIT).
 
 Context is one network engine. You listen or connect, then either loop on
 ``poll`` (packets arrive in batches and are given back when the ``with`` block ends) or register
 handlers/hooks and call ``dispatch`` (they run in Python over one batched poll). Payloads are built and read with ``encode`` / ``decode``
-from the layouts in the packet registry. Errors are raised as ``duplex.Error``.
+from the layouts in the packet registry. Errors are raised as ``c2s2c.Error``.
 """
 import ctypes
 import struct
@@ -22,10 +22,10 @@ WOULD_BLOCK = -14
 
 
 class Error(Exception):
-    """A library error: ``code`` is the DX_ERR_* value (negative), ``str(e)`` its message."""
+    """A library error: ``code`` is the C2S2C_ERR_* value (negative), ``str(e)`` its message."""
 
     def __init__(self, code):
-        super().__init__(_lib.dx_strerror(code).decode())
+        super().__init__(_lib.c2s2c_strerror(code).decode())
         self.code = code
 
 
@@ -42,15 +42,15 @@ _FIXED = {"u8": "B", "u16": "H", "u32": "I", "u64": "Q", "i8": "b", "i16": "h", 
 
 
 def _registry():
-    import duplex_registry  # generated from Registry/protocol.toml
-    return duplex_registry
+    import c2s2c_registry  # generated from Registry/protocol.toml
+    return c2s2c_registry
 
 
 def _schema(packet_id):
     try:
         return _registry().PACKETS[packet_id][1].split(",") if _registry().PACKETS[packet_id][1] else []
     except KeyError:
-        raise Error(-13)  # DX_ERR_UNKNOWN_ID
+        raise Error(-13)  # C2S2C_ERR_UNKNOWN_ID
 
 
 def _write_value(out, kind, value):
@@ -144,17 +144,17 @@ class Packet:
 
     @property
     def reason(self):
-        """For DX_SYS_DISCONNECTED: 0 for a normal close, a negative DX_ERR_* otherwise."""
+        """For C2S2C_SYS_DISCONNECTED: 0 for a normal close, a negative C2S2C_ERR_* otherwise."""
         return struct.unpack("<i", self.payload())[0]
 
 
-# The array of dx_packet that dx_poll fills is decoded in one go with struct (much faster than
+# The array of c2s2c_packet that c2s2c_poll fills is decoded in one go with struct (much faster than
 # reading ctypes fields one by one): conn, sequence, data pointer, length, id, flags, reserved.
 _PTR = "Q" if ctypes.sizeof(ctypes.c_void_p) == 8 else "I"
 _RECORD = struct.Struct("<II" + _PTR + "IHBB" + ("4x" if ctypes.sizeof(_ffi.Packet) == 28 else ""))
-assert _RECORD.size == ctypes.sizeof(_ffi.Packet), "dx_packet layout mismatch"
+assert _RECORD.size == ctypes.sizeof(_ffi.Packet), "c2s2c_packet layout mismatch"
 _OUT = struct.Struct("<IHH" + _PTR + "I" + ("4x" if _PTR == "Q" else ""))  # conn, id, reserved, data, length
-assert _OUT.size == ctypes.sizeof(_ffi.Outgoing), "dx_outgoing layout mismatch"
+assert _OUT.size == ctypes.sizeof(_ffi.Outgoing), "c2s2c_outgoing layout mismatch"
 
 
 class _Batch:
@@ -190,25 +190,25 @@ class _Batch:
             except BufferError:  # the user still holds a slice: it will not be reachable via us
                 pass
         if self.packets:
-            _lib.dx_release(self._ctx, len(self.packets))
+            _lib.c2s2c_release(self._ctx, len(self.packets))
 
 
 class Context:
-    """One network engine (use it from one thread). Keyword arguments set dx_config fields."""
+    """One network engine (use it from one thread). Keyword arguments set c2s2c_config fields."""
 
     def __init__(self, **settings):
         cfg = _ffi.Config()
-        _lib.dx_config_default(ctypes.byref(cfg))
+        _lib.c2s2c_config_default(ctypes.byref(cfg))
         for key, value in settings.items():
             if not hasattr(cfg, key):
                 raise TypeError(f"unknown setting {key!r}")
             setattr(cfg, key, value)
         if "tx_bytes" not in settings and "max_payload" in settings:
             cfg.tx_bytes = 4 * (cfg.max_payload + 14)
-        self._ctx = _lib.dx_create(ctypes.byref(cfg))
+        self._ctx = _lib.c2s2c_create(ctypes.byref(cfg))
         if not self._ctx:
-            raise Error(-18)  # DX_ERR_NO_MEMORY: invalid settings or out of memory
-        self._finalizer = weakref.finalize(self, _lib.dx_destroy, self._ctx)
+            raise Error(-18)  # C2S2C_ERR_NO_MEMORY: invalid settings or out of memory
+        self._finalizer = weakref.finalize(self, _lib.c2s2c_destroy, self._ctx)
         self._handlers = {}
         self._hooks = (None, None, None, None)
         self._before_send = None
@@ -224,15 +224,15 @@ class Context:
         self.close()
 
     def listen(self, address="127.0.0.1", port=0):
-        _check(_lib.dx_listen(self._ctx, address.encode(), port))
+        _check(_lib.c2s2c_listen(self._ctx, address.encode(), port))
 
     @property
     def port(self):
-        return _check(_lib.dx_listen_port(self._ctx))
+        return _check(_lib.c2s2c_listen_port(self._ctx))
 
     def connect(self, address, port):
         conn = ctypes.c_uint32()
-        _check(_lib.dx_connect(self._ctx, address.encode(), port, ctypes.byref(conn)))
+        _check(_lib.c2s2c_connect(self._ctx, address.encode(), port, ctypes.byref(conn)))
         return conn.value
 
     def send(self, conn, packet_id, data=b""):
@@ -273,25 +273,25 @@ class Context:
             _OUT.pack_into(out, i * _OUT.size, conn, pid, 0, base + offset, length)
             offset += length
         records = (_ffi.Outgoing * n).from_buffer(out)
-        return _check(_lib.dx_send_batch(self._ctx, records, n))
+        return _check(_lib.c2s2c_send_batch(self._ctx, records, n))
 
     def flush(self):
         """Writes queued packets now (only needed when no poll/dispatch follows)."""
-        _check(_lib.dx_flush(self._ctx))
+        _check(_lib.c2s2c_flush(self._ctx))
 
     def _raw_send(self, conn, packet_id, data):
         if self._before_send and self._before_send(conn, packet_id, bytes(data)):
-            return -22  # DX_ERR_REJECTED
+            return -22  # C2S2C_ERR_REJECTED
         data = bytes(data)
-        return _lib.dx_send(self._ctx, conn, packet_id, data, len(data))
+        return _lib.c2s2c_send(self._ctx, conn, packet_id, data, len(data))
 
     def close_connection(self, conn):
-        _check(_lib.dx_close(self._ctx, conn))
+        _check(_lib.c2s2c_close(self._ctx, conn))
 
     def poll(self, timeout_ms=0, max_packets=64):
         """Returns a batch; use ``with ctx.poll(100) as batch:`` so it is released afterwards."""
         raw = (_ffi.Packet * max_packets)()
-        n = _check(_lib.dx_poll(self._ctx, raw, max_packets, timeout_ms))
+        n = _check(_lib.c2s2c_poll(self._ctx, raw, max_packets, timeout_ms))
         return _Batch(self._ctx, raw, n)
 
     def on_packet(self, packet_id, fn):
