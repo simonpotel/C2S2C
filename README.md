@@ -2,9 +2,6 @@
 
 ![C11](https://img.shields.io/badge/C11-00599C?style=for-the-badge&logo=c&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
-![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)
-![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![No dependencies](https://img.shields.io/badge/Dependencies-none-2EA44F?style=for-the-badge)
 ![License MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
@@ -79,7 +76,13 @@ other's bytes:
 | `Examples/` | the same chat server and client in Rust, Python and Node, and a web chat |
 | `Tests/`, `Bench/` | C tests, fuzzing, faults, stress, cross-language tests, benchmarks |
 
-The bindings and examples are used from:
+Platforms tested in CI (the library on all three; the bindings and examples on Linux and macOS):
+
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+
+Bindings and examples:
 
 ![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
