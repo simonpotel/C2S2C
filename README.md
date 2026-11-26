@@ -33,6 +33,18 @@ it is written again for each language of the stack.
 Duplex writes it **once**, in C11, and every language uses the same compiled library
 (`libduplex`) through a thin binding. Packets are defined once in `Registry/protocol.toml`.
 
+## The problem, as people meet it
+
+The same questions come back on forums whenever someone writes this layer by hand:
+
+- [Handling partial return from recv() TCP in C](https://stackoverflow.com/questions/1386142/handling-partial-return-from-recv-tcp-in-c) (Stack Overflow): one message can need several reads, and several messages can arrive in one.
+- [recv() receiving partial messages](https://stackoverflow.com/questions/10250666/socket-programming-issue-with-recv-receiving-partial-messages) (Stack Overflow): a market-data feed that looks truncated, until framing is added.
+- [How does a TCP packet arrive when using the Socket API](https://stackoverflow.com/questions/41948032/how-does-a-tcp-packet-arrive-when-using-the-socket-api-in-c) (Stack Overflow): a length-prefixed message can be split or merged with the next one.
+- [It's always TCP_NODELAY](https://news.ycombinator.com/item?id=40310896) (Hacker News): latency surprises from TCP's small-packet handling, told by game and network engineers.
+- [Message Framing](https://blog.stephencleary.com/2009/04/message-framing.html) (Stephen Cleary) and [Reading and Writing Packets](https://gafferongames.com/post/reading_and_writing_packets/) (Glenn Fiedler, games): the classic explanations of what you must build yourself.
+
+Every concept Duplex uses is sourced in [DOCUMENTATION.md, "Sources"](DOCUMENTATION.md#sources).
+
 ## What you gain
 
 The same ping/pong service, written from scratch in each language versus on top of Duplex

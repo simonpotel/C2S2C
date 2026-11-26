@@ -396,6 +396,80 @@ Add a vector: `header_<name>` or `payload_<name>` `.bin` + `.json` in `Tests/Vec
 (payload json: `{"schema": "u8,string,array<u16>", "error": "DX_OK"}`; `packet_<name>` uses `{"packet_id": 32770, ...}` and the registry layout).
 Add a unit test: `Tests/Unit/test_x.c` + `dx_unit_test(test_x)` in `Tests/CMakeLists.txt`.
 
+## Sources
+
+Where each idea comes from, with a short summary in our own words. Every link was opened and
+checked when this section was written (November 2026).
+
+### TCP is a stream: framing and partial reads
+
+| Source | What it says | Used for |
+|---|---|---|
+| [Message Framing](https://blog.stephencleary.com/2009/04/message-framing.html), Stephen Cleary | TCP keeps no message boundaries; the application must add them. Compares length prefixes with delimiters and prefers length prefixes. | the 14-byte header with a `length` field |
+| [Beej's Guide, Handling partial send()s](https://beej.us/guide/bgnet/html/#sendall), Brian Hall | `send` may write only part of a buffer; loop until everything is sent. | the per-connection send buffer and `dx_conn_flush` |
+| [Beej's Guide, Serialization](https://beej.us/guide/bgnet/html/#serialization) | Pack numbers into a portable binary form and wrap them in a header with type and length. | the payload format and `packet_id` |
+| [Stack Overflow 41948032](https://stackoverflow.com/questions/41948032/how-does-a-tcp-packet-arrive-when-using-the-socket-api-in-c), accepted answer | A read may return part of a message, part of its prefix, or several messages: buffer until a frame is complete. In the answer's words: "TCP is a stream protocol - it transmits a stream of bytes." | `Conn/receiving.c`, the Faults tests (one byte at a time, split frames) |
+| [Stack Overflow 1386142](https://stackoverflow.com/questions/1386142/handling-partial-return-from-recv-tcp-in-c) and [10250666](https://stackoverflow.com/questions/10250666/socket-programming-issue-with-recv-receiving-partial-messages) | Real cases of "truncated" messages solved by a read loop and length framing. | the problem statement in the README |
+
+### Encoding
+
+| Source | What it says | Used for |
+|---|---|---|
+| [The byte order fallacy](https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html), Rob Pike | Never depend on the CPU's byte order: build values from single bytes with shifts and the code is correct everywhere. | `Source/Codec/endian.h` |
+| [Reading and Writing Packets](https://gafferongames.com/post/reading_and_writing_packets/), Glenn Fiedler | A packet reader/writer for games; check every field, because packets can come from malicious senders. | strict header and payload validation |
+| [Serialization Strategies](https://gafferongames.com/post/serialization_strategies/), Glenn Fiedler | Describe a message once so reading and writing cannot drift apart; range-check what you read. | one registry (`protocol.toml`) generating every language's tables |
+| [RFC 3629](https://www.rfc-editor.org/rfc/rfc3629), UTF-8 | The definition of UTF-8: no surrogates, nothing above U+10FFFF, and decoders must reject overlong forms. | `Source/Codec/utf8.c` |
+| [Unicode TR #36, rev. 15, §3.1](https://www.unicode.org/reports/tr36/tr36-15.html) | Accepting ill-formed or non-shortest UTF-8 lets attackers slip characters past filters. | why invalid text closes the connection |
+| [Overlong UTF-8 Escapes Bite](https://learn.microsoft.com/en-us/archive/blogs/michael_howard/overlong-utf-8-escapes-bite), Michael Howard | A real web-server flaw where overlong characters bypassed a path check (the class of bug used by the Nimda worm). | the UTF-8 test cases |
+
+### Event loops and I/O
+
+| Source | What it says | Used for |
+|---|---|---|
+| [The C10K problem](http://www.kegel.com/c10k.html), Dan Kegel | How to serve ten thousand clients at once; readiness notification (epoll, kqueue) beats one thread per client. | one event loop per context, the 10 000-connection stress test |
+| [epoll(7)](https://man7.org/linux/man-pages/man7/epoll.7.html), [kqueue(2)](https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2) | The Linux and BSD/macOS readiness APIs: register sockets once, get many ready ones per call. | `Source/IO/io_epoll.c`, `io_kqueue.c` |
+| [io_uring(7)](https://man7.org/linux/man-pages/man7/io_uring.7.html) and [Efficient IO with io_uring](https://kernel.dk/io_uring.pdf), Jens Axboe | Requests and completions go through two queues shared with the kernel, so many operations cost few system calls. | `Source/IO/io_uring.c` |
+| [RFC 896](https://www.rfc-editor.org/rfc/rfc896), John Nagle | The small-packet problem and the algorithm that delays small segments. | why sockets set `TCP_NODELAY` |
+| [Nagle and Delayed ACK](https://www.stuartcheshire.org/papers/NagleDelayedAck/), Stuart Cheshire; [It's always TCP_NODELAY](https://brooker.co.za/blog/2024/05/09/nagle.html), Marc Brooker ([HN discussion](https://news.ycombinator.com/item?id=40310896)) | Nagle plus delayed acknowledgements stalls request/response traffic; latency-sensitive programs should disable Nagle. | `TCP_NODELAY`, and grouping our own writes per connection instead |
+| [tcp(7)](https://man7.org/linux/man-pages/man7/tcp.7.html) | `TCP_NODELAY` turns Nagle off; `TCP_CORK` gathers partial writes. | the "dirty list" that writes once per connection per batch (`dx_flush`) |
+
+### Memory, flow control, attacks
+
+| Source | What it says | Used for |
+|---|---|---|
+| [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/disruptor.html), Thompson, Farley et al. | A pre-sized ring buffer with reused slots avoids allocation on the hot path and cuts latency. | `Source/Memory/ring.c`, all memory reserved at `dx_create` |
+| [Backpressuring in Streams](https://nodejs.org/en/learn/modules/backpressuring-in-streams), Node.js | A fast producer overwhelms a slow consumer unless buffers are bounded and the producer is paused. | reading pauses when the application or a relay peer is behind |
+| [Slowloris](https://en.wikipedia.org/wiki/Slowloris_%28cyber_attack%29), Wikipedia | One client keeps many connections open by sending very slowly; mitigations are time limits and minimum rates. | `idle_timeout_ms`, the slowloris tests |
+
+### Checksum
+
+| Source | What it says | Used for |
+|---|---|---|
+| [RFC 7143](https://www.rfc-editor.org/rfc/rfc7143) (iSCSI) | Requires the CRC-32C (Castagnoli) digest, polynomial 0x1EDC6F41, for integrity. | the choice of CRC-32C for `dx_crc32c` |
+| [x86 CRC32 instruction](https://www.felixcloutier.com/x86/crc32) (copy of Intel's manual), [Arm C Language Extensions](https://arm-software.github.io/acle/main/acle.html) | The SSE4.2 and Armv8 instructions that compute CRC-32C in hardware. | `Source/Simd/crc32_sse42.c`, `crc32_armv8.c` |
+
+### Testing
+
+| Source | What it says | Used for |
+|---|---|---|
+| [libFuzzer](https://llvm.org/docs/LibFuzzer.html) | Coverage-guided, in-process fuzzing through a `LLVMFuzzerTestOneInput` function. | `Tests/Fuzz/` |
+| [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [ThreadSanitizer](https://clang.llvm.org/docs/ThreadSanitizer.html) | Compiler modes that catch out-of-bounds accesses, use-after-free and data races at run time. | the `asan` and `tsan` presets, CI |
+
+### Bindings
+
+| Source | What it says | Used for |
+|---|---|---|
+| [ctypes](https://docs.python.org/3/library/ctypes.html) | Load a shared library and describe its functions and structs from plain Python. | `Bindings/Python` (no compiled extension) |
+| [Node-API](https://nodejs.org/api/n-api.html) | A stable C interface for native Node add-ons, including buffer exchange. | `Bindings/Node/Source/binding.c` |
+| [The Rustonomicon, FFI](https://doc.rust-lang.org/nomicon/ffi.html) | Call C through `extern` blocks and wrap the unsafe calls in safe types. | `Bindings/Rust` (`duplex-sys` raw, `duplex` safe) |
+
+### Existing libraries in the same space
+
+| Library | What it is | Difference with Duplex |
+|---|---|---|
+| [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets), Valve | Message transport over UDP with reliability, fragmentation and encryption. | UDP and encryption; Duplex is TCP with a typed packet registry shared by several languages. |
+| [ENet](http://enet.bespin.org/), Lee Salzman | A small C library for reliable, ordered delivery over UDP, common in games. | no schema or payload validation; Duplex validates every field against the registry. |
+
 ## Planned
 
 - An **IOCP backend** for Windows (today Windows uses `WSAPoll`), and porting the bindings and
