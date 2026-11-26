@@ -5,7 +5,6 @@
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 ![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
-![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
 ![No dependencies](https://img.shields.io/badge/Dependencies-none-2EA44F?style=for-the-badge)
 ![License MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
@@ -64,6 +63,14 @@ other's bytes:
 | `Bindings/` | Rust, Python, Node/TypeScript, C++, and a 6 KB WebAssembly build for browsers |
 | `Examples/` | the same chat server and client in Rust, Python and Node, and a web chat |
 | `Tests/`, `Bench/` | C tests, fuzzing, faults, stress, cross-language tests, benchmarks |
+
+The bindings and examples are used from:
+
+![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
 
 ## Use it
 
