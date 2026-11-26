@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: MIT */
 #include <stdlib.h>
 #include <sys/resource.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 
 #include "../net_test.h"
 #include "IO/net.h"
@@ -87,6 +90,14 @@ int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0); /* a run killed by a timeout still shows how far it got */
     long fds = c2s2c_net_raise_fd_limit();
+#ifdef __APPLE__
+    /* Regression: macOS reports "unlimited" but enforces kern.maxfilesperproc; reporting more
+     * made the test open connections the system then refused. */
+    int per_proc = 0;
+    size_t len = sizeof per_proc;
+    CHECK(sysctlbyname("kern.maxfilesperproc", &per_proc, &len, NULL, 0) == 0 && fds > 0 &&
+          fds <= per_proc);
+#endif
     unsigned conns = env_or("C2S2C_STRESS_CONNS", 10000);
     unsigned max_by_fds = fds > 200 ? (unsigned)((fds - 100) / 2) : 50;
     if (conns > max_by_fds) conns = max_by_fds;
@@ -127,11 +138,13 @@ int main(void)
            C.disconnected, (unsigned long long)(test_now_ms() - t_start));
     CHECK(conns >= 1000); /* anything below would not be a stress test */
     uint64_t t0 = test_now_ms();
-    while ((S.connected < conns || C.connected < conns) && test_now_ms() - t0 < 60000) {
+    while ((S.connected < conns || C.connected + C.disconnected < conns) &&
+           test_now_ms() - t0 < 60000) {
         pump(&S);
         pump(&C);
     }
     CHECK(S.connected == conns && C.connected == conns);
+    if (C.disconnected) return c2s2c_test_done(); /* the traffic below would wait for lost peers */
 
     /* Warm-up: one ping on every connection, so each connection's buffers have been touched
      * (the operating system hands out memory lazily). The memory baseline is taken afterwards. */

@@ -10,6 +10,9 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 #include <time.h>
 #include <unistd.h>
 
@@ -170,6 +173,15 @@ long c2s2c_net_raise_fd_limit(void)
 {
     struct rlimit rl;
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) return -1;
+#ifdef __APPLE__
+    /* The hard limit says "unlimited", but no process can hold more than kern.maxfilesperproc
+     * descriptors: past it connections are refused, so that is the real ceiling to report. */
+    int per_proc = 0;
+    size_t len = sizeof per_proc;
+    if (sysctlbyname("kern.maxfilesperproc", &per_proc, &len, NULL, 0) == 0 && per_proc > 0 &&
+        (rlim_t)per_proc < rl.rlim_max)
+        rl.rlim_max = (rlim_t)per_proc;
+#endif
     /* Ask for the hard limit; macOS reports "unlimited" but refuses it, so fall back to
      * progressively smaller values until the system accepts one. */
     rlim_t wanted[] = {rl.rlim_max, 1048576, 65536, 20000, 10240};
@@ -177,6 +189,7 @@ long c2s2c_net_raise_fd_limit(void)
         struct rlimit try = {wanted[i] > rl.rlim_max ? rl.rlim_max : wanted[i], rl.rlim_max};
         if (try.rlim_cur > rl.rlim_cur && setrlimit(RLIMIT_NOFILE, &try) == 0) break;
     }
+    rlim_t ceiling = rl.rlim_max;
     if (getrlimit(RLIMIT_NOFILE, &rl) < 0) return -1;
-    return (long)rl.rlim_cur;
+    return (long)(rl.rlim_cur < ceiling ? rl.rlim_cur : ceiling);
 }
